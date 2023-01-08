@@ -1,0 +1,6 @@
+[submodule "kuma_utils"]
+	path = kuma_utils
+	url = https://github.com/analokmaus/kuma_utils.git
+[submodule "pytorch-image-models"]
+	path = pytorch-image-models
+	url = https://github.com/rwightman/pytorch-image-models.git
