@@ -60,7 +60,7 @@ class Baseline:
     max_grad_norm = 100
     hook = TrainHook()
     callbacks = [
-        EarlyStopping(patience=5, maximize=False, skip_epoch=5),
+        EarlyStopping(patience=5, maximize=True, skip_epoch=0),
         SaveSnapshot()
     ]
 
@@ -72,6 +72,8 @@ class Baseline:
     transforms = dict(
         train=A.Compose([
             A.ShiftScaleRotate(rotate_limit=30), 
+            A.HorizontalFlip(),
+            A.VerticalFlip(),
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
         ]), 
         test=A.Compose([
@@ -82,17 +84,3 @@ class Baseline:
     pseudo_labels = None
     debug = False
 
-
-class Aug00(Baseline):
-    name = 'aug_00'
-    transforms = dict(
-        train=A.Compose([
-            A.ShiftScaleRotate(rotate_limit=30, p=0.5), 
-            A.HorizontalFlip(),
-            A.VerticalFlip(),
-            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
-        ]), 
-        test=A.Compose([
-            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
-        ]), 
-    )
