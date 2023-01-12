@@ -8,12 +8,14 @@ import pydicom
 from general import DATA_DIR
 from tqdm.auto import tqdm
 from joblib import Parallel, delayed
+from pydicom.pixel_data_handlers import apply_windowing
 
 
-IMG_SIZE = 2048
-EXPORT_DIR = DATA_DIR/f'image_resized_{IMG_SIZE}'
+IMG_SIZE = 1024
+WINDOW = True
+EXPORT_DIR = DATA_DIR/f'image_resized_{IMG_SIZE}{"W" if WINDOW else ""}'
 EXPORT_DIR.mkdir(exist_ok=True)
-N_JOBS = 8
+N_JOBS = 40
 
 
 class ProgressParallel(Parallel):
@@ -43,9 +45,11 @@ def process(f, size=1024):
     #     return
 
     img = dicom.pixel_array
-    img = (img - img.min()) / (img.max() - img.min())
     if dicom.PhotometricInterpretation == "MONOCHROME1":
-        img = 1 - img
+        img = img.max() - img
+    if WINDOW:
+        img = apply_windowing(img, dicom)
+    img = (img - img.min()) / (img.max() - img.min())
 
     img = cv2.resize(img, (size, size))
     cv2.imwrite(str(EXPORT_DIR/f'{patient_id}/{image_id}.png'), (img * 255).astype(np.uint8))

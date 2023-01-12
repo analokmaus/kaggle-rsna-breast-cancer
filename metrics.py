@@ -6,8 +6,9 @@ from kuma_utils.metrics import MetricTemplate
 class Pfbeta(nn.Module):
     '''
     '''
-    def __init__(self):
+    def __init__(self, return_thres=False):
         super().__init__()
+        self.return_thres = return_thres
 
     def pfbeta(self, labels, predictions, beta=1.):
         y_true_count = 0
@@ -40,4 +41,7 @@ class Pfbeta(nn.Module):
     def forward(self, approx, target):
         f1s, thres = self.optimal_f1(
             target.detach().cpu().numpy(), approx.sigmoid().detach().cpu().numpy())
-        return f1s[0]
+        if self.return_thres:
+            return f1s[0], thres
+        else:
+            return f1s[0]

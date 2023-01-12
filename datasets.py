@@ -9,15 +9,19 @@ from general import *
 
 class PatientLevelDataset(D.Dataset):
     def __init__(
-        self, df, image_dir, target_cols=['cancer'],
+        self, df, image_dir, target_cols=['cancer'], metadata_cols=[],
         preprocess=None, transforms=None, 
         is_test=False, mixup_params=None, return_index=False):
 
         self.df = df
-        self.df_dict = {pid: pdf for pid, pdf in df.groupby(['patient_id', 'laterality'])}
+        if 'oversample_id' in df.columns:
+            self.df_dict = {pid: pdf for pid, pdf in df.groupby(['oversample_id', 'patient_id', 'laterality'])}
+        else:
+            self.df_dict = {pid: pdf for pid, pdf in df.groupby(['patient_id', 'laterality'])}
         self.pids = list(self.df_dict.keys())
         self.image_dir = image_dir
         self.target_cols = target_cols
+        self.metadata_cols = metadata_cols
         self.preprocess = preprocess
         self.transforms = transforms
         self.is_test = is_test
@@ -41,7 +45,14 @@ class PatientLevelDataset(D.Dataset):
             img = self.preprocess(image=img)['image']
 
         if self.transforms:
-            img = self.transforms(image=img)['image']
+            if len(img.shape) == 4: # Tile x W x H x Ch
+                output = []
+                for tile in img:
+                    output.append(self.transforms(image=tile)['image']) # -> torch
+                output = torch.stack(output)
+                img = output
+            else: # W x H x Ch
+                img = self.transforms(image=img)['image']
 
         return img
 
@@ -54,7 +65,7 @@ class PatientLevelDataset(D.Dataset):
         else:
             view0 = view0.sample().iloc[0]
             path0 = self.image_dir/f'{view0.patient_id}/{view0.image_id}.png'
-            img0 = self._load_image(path0)
+            img0 = self._load_image(path0) # (Ch x W x H) or (T x Ch x W x H)
 
         view1 = pdf.query('view.isin(@self.view_category[1])')
         if len(view1) == 0:
@@ -73,21 +84,29 @@ class PatientLevelDataset(D.Dataset):
             img0 = torch.flip(img0, dims=(2,))
             img1 = torch.flip(img1, dims=(2,))
 
-        label = torch.from_numpy(view0[self.target_cols].values.astype(np.float16))
-        return img0, img1, label
+        label = torch.from_numpy(pdf[self.target_cols].values[0].astype(np.float16))
+        img = torch.stack([img0, img1], dim=0) # (2 x Ch x W x H) or (2 x T x Ch x W x H)
+        return img, label
 
     def __getitem__(self, idx):
-        img0, img1, label = self._load_data(idx)
+        img, label = self._load_data(idx)
 
         if self.mu:
             idx2 = np.random.randint(0, len(self.images))
             lam = np.random.beta(self.mu_a, self.mu_a)
-            img01, img11, label1 = self._load_data(idx2)
-            img0 = lam * img0 + (1 - lam) * img01
-            img1 = lam * img1 + (1 - lam) * img11
-            label = lam * label + (1 - lam) * label1
+            img2, label2 = self._load_data(idx2)
+            img = lam * img + (1 - lam) * img2
+            label = lam * label + (1 - lam) * label2
 
         if self.rt_idx:
-            return img0, img1, label, idx
+            return img, label, idx
         else:
-            return img0, img1, label
+            return img, label
+
+    def get_labels(self):
+        labels = []
+        for idx in range(len(self.df_dict)):
+            pid = self.pids[idx]
+            pdf = self.df_dict[pid]
+            labels.append(pdf[self.target_cols].values[0].reshape(1, 1).astype(np.float16))
+        return np.concatenate(labels, axis=0)

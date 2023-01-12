@@ -17,9 +17,22 @@ from torch.nn import SyncBatchNorm
 
 from kuma_utils.torch import TorchTrainer, TorchLogger
 from kuma_utils.torch.utils import get_time, seed_everything, fit_state_dict
+from kuma_utils.torch.temperature_scaling import TemperatureScaler
+from timm.layers import convert_sync_batchnorm
 
 from configs import *
 from utils import print_config, notify_me
+from metrics import Pfbeta
+
+
+def oversample_data(df, n_times=0):
+    def add_oversample_id(df, oid):
+        df['oversample_id'] = oid
+        return df
+    if n_times > 0:
+        df = pd.concat([add_oversample_id(df, 0)] + [
+            add_oversample_id(df.query('cancer == 1'), i+1) for i in range(n_times)], axis=0)
+    return df
 
 
 if __name__ == "__main__":
@@ -37,6 +50,7 @@ if __name__ == "__main__":
     parser.add_argument("--silent", action='store_true')
     parser.add_argument("--progress_bar", action='store_true')
     parser.add_argument("--skip_existing", action='store_true')
+    parser.add_argument("--calibrate", action='store_true')
     parser.add_argument("--resume", action='store_true')
     parser.add_argument("--wait", type=int, default=0,
                         help="time (sec) to wait before execution")
@@ -100,23 +114,34 @@ if __name__ == "__main__":
 
         train_fold = train.iloc[train_idx]
         valid_fold = train.iloc[valid_idx]
+        train_fold = oversample_data(train_fold, cfg.oversample_ntimes)
 
         train_data = cfg.dataset(
             df=train_fold,
+            image_dir=cfg.image_dir,
             preprocess=cfg.preprocess['train'],
             transforms=cfg.transforms['train'],
             is_test=False,
             **cfg.dataset_params)
         valid_data = cfg.dataset(
             df=valid_fold, 
+            image_dir=cfg.image_dir,
             preprocess=cfg.preprocess['test'],
             transforms=cfg.transforms['test'],
-            is_test=False,
+            is_test=True,
             **cfg.dataset_params)
+        train_weights = train_data.get_labels().reshape(-1)
+        train_weights[train_weights == 1] = (train_weights == 0).sum() / (train_weights == 1).sum()
+        train_weights[train_weights == 0] = 1
+        if cfg.sampler is not None:
+            sampler = cfg.sampler(train_weights.tolist(), len(train_weights))
+        else:
+            sampler = None
 
         train_loader = D.DataLoader(
-            train_data, batch_size=cfg.batch_size, shuffle=True,
-            num_workers=opt.num_workers, pin_memory=False)
+            train_data, batch_size=cfg.batch_size, 
+            shuffle=True if cfg.sampler is None else False,
+            sampler=sampler, num_workers=opt.num_workers, pin_memory=False)
         valid_loader = D.DataLoader(
             valid_data, batch_size=cfg.batch_size, shuffle=False,
             num_workers=opt.num_workers, pin_memory=False)
@@ -162,7 +187,12 @@ if __name__ == "__main__":
             'resume': opt.resume
         }
         try:
-            trainer = TorchTrainer(model, serial=f'fold{fold}', device=opt.gpu)
+            trainer = TorchTrainer(model, serial=f'fold{fold}', device=None)
+            trainer.ddp_sync_batch_norm = convert_sync_batchnorm
+            trainer.ddp_params = dict(
+                broadcast_buffers=True, 
+                find_unused_parameters=True
+            )
             trainer.fit(**FIT_PARAMS)
         except Exception as e:
             err = traceback.format_exc()
@@ -178,10 +208,11 @@ if __name__ == "__main__":
 
 
     '''
-    Inference
+    Calibration
     '''
-    outoffolds = np.full((len(train), 1), 0, dtype=np.float32)
+    outoffolds = []
     selfpreditions = np.full((cfg.cv, len(train), 1), 0, dtype=np.float32)
+    eval_metric = Pfbeta(return_thres=True)
     for fold, (train_idx, valid_idx) in enumerate(fold_iter):
 
         if not (export_dir/f'fold{fold}.pt').exists():
@@ -190,44 +221,44 @@ if __name__ == "__main__":
 
         LOGGER(f'===== INFERENCE FOLD {fold} =====')
 
-        # inference_data = cfg.dataset(
-        #     image_paths=train['image_paths'].values, 
-        #     labels=train['label'].values, 
-        #     preprocess=cfg.preprocess['test'],
-        #     transforms=cfg.transforms['test'],
-        #     is_test=False,
-        #     **cfg.dataset_params)
-        # inference_loader = D.DataLoader(
-        #     inference_data,
-        #     batch_size=min(4, cfg.batch_size//torch.cuda.device_count()), 
-        #     shuffle=False,
-        #     num_workers=opt.num_workers, pin_memory=False)
+        valid_fold = train.iloc[valid_idx]
+        valid_data = cfg.dataset(
+            df=valid_fold, 
+            image_dir=cfg.image_dir,
+            preprocess=cfg.preprocess['test'],
+            transforms=cfg.transforms['test'],
+            is_test=True,
+            **cfg.dataset_params)
+        valid_loader = D.DataLoader(
+            valid_data, batch_size=cfg.batch_size, shuffle=False,
+            num_workers=opt.num_workers, pin_memory=False)
 
-        # model = cfg.model(**cfg.model_params)
+        model = cfg.model(**cfg.model_params)
         checkpoint = torch.load(export_dir/f'fold{fold}.pt', 'cpu')
-        scores.append(checkpoint['state']['best_score'])
-        # fit_state_dict(checkpoint['model'], model)
-        # model.load_state_dict(checkpoint['model'])
-        # del checkpoint; gc.collect()
-        # if cfg.parallel == 'ddp':
-        #     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        fit_state_dict(checkpoint['model'], model)
+        model.load_state_dict(checkpoint['model'])
+        del checkpoint; gc.collect()
+        if cfg.parallel == 'ddp':
+            model = convert_sync_batchnorm(model)
 
-        # trainer = TorchTrainer(model, serial=f'fold{fold}', device=opt.gpu)
-        # trainer.register(hook=cfg.hook, callbacks=cfg.callbacks)
-
-        # prediction = trainer.predict(inference_loader, progress_bar=opt.progress_bar)
-
-        # outoffolds[valid_idx] = prediction[valid_idx]
-        # selfpreditions[fold] = prediction
-
-        # del model, trainer, inference_data; gc.collect()
-        # torch.cuda.empty_cache()
+        trainer = TorchTrainer(model, serial=f'fold{fold}', device=opt.gpu)
+        trainer.register(hook=cfg.hook, callbacks=cfg.callbacks)
+        pred_logits = trainer.predict(valid_loader, progress_bar=opt.progress_bar)
+        target_fold = torch.from_numpy(valid_data.get_labels())
+        if opt.calibrate:
+            trainer.model = TemperatureScaler(trainer.model).cuda()
+            trainer.model.set_temperature(torch.from_numpy(pred_logits).cuda(), target_fold.cuda())
+            pred_logits = trainer.predict(valid_loader, progress_bar=opt.progress_bar)
+        eval_score_fold, thres = eval_metric(torch.from_numpy(pred_logits), target_fold)
+        LOGGER(f'threshold: {thres:.5f}')
+        scores.append(eval_score_fold)
+        outoffolds.append(pred_logits)
+        torch.cuda.empty_cache()
     
     with open(str(export_dir/'predictions.pickle'), 'wb') as f:
         pickle.dump({
             'folds': fold_iter,
-            'outoffolds': outoffolds,
-            'predictions': selfpreditions
+            'outoffolds': outoffolds
         }, f)
 
     LOGGER(f'scores: {scores}')

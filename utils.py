@@ -15,7 +15,7 @@ def print_config(cfg, logger=None):
     items = [
         'name', 
         'cv', 'num_epochs', 'batch_size', 'seed', 'image_dir', 
-        'dataset', 'dataset_params', 'num_classes', 'preprocess', 'transforms', 'splitter',
+        'dataset', 'dataset_params', 'sampler', 'oversample_ntimes', 'num_classes', 'preprocess', 'transforms', 'splitter',
         'model', 'model_params', 'weight_path', 'optimizer', 'optimizer_params',
         'scheduler', 'scheduler_params', 'batch_scheduler', 'scheduler_target',
         'criterion', 'eval_metric', 'monitor_metrics',

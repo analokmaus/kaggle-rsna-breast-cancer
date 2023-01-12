@@ -4,3 +4,6 @@
 [submodule "pytorch-image-models"]
 	path = pytorch-image-models
 	url = https://github.com/rwightman/pytorch-image-models.git
+[submodule "iterative-stratification"]
+	path = iterative-stratification
+	url = https://github.com/trent-b/iterative-stratification.git
