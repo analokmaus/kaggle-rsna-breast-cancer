@@ -11,7 +11,7 @@ from joblib import Parallel, delayed
 from pydicom.pixel_data_handlers import apply_windowing
 
 
-IMG_SIZE = 1024
+IMG_SIZE = 2048
 WINDOW = True
 EXPORT_DIR = DATA_DIR/f'image_resized_{IMG_SIZE}{"W" if WINDOW else ""}'
 EXPORT_DIR.mkdir(exist_ok=True)

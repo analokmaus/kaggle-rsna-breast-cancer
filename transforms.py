@@ -71,3 +71,56 @@ class ImageToTile(ImageOnlyTransform):
     def get_transform_init_args_names(self):
         return ('tile_size', 'num_tiles', 'concat', 'criterion', 'dropout')
     
+
+
+class CropROI(ImageOnlyTransform):
+
+    def __init__(self, threshold=0.1, buffer=30, always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.threshold = threshold
+        self.buffer = buffer
+
+    def crop_roi(self, img, threshold=0.1, buffer=50):
+        y_max, x_max = img.shape
+        img2 = img > img.mean()
+        y_mean = img2.mean(0)
+        x_mean = img2.mean(1)
+        x_mean[:buffer] = 0
+        x_mean[-buffer:] = 0
+        y_mean[:buffer] = 0
+        y_mean[-buffer:] = 0
+        y_mean = (y_mean - y_mean.min() + 1e-4) / (y_mean.max() - y_mean.min() + 1e-4)
+        x_mean = (x_mean - x_mean.min() + 1e-4) / (x_mean.max() - x_mean.min() + 1e-4)
+        y_slice = np.where(y_mean > threshold)[0]
+        x_slice = np.where(x_mean > threshold)[0]
+        if len(x_slice) == 0:
+            x_start, x_end = 0, x_max
+        else:
+            x_start, x_end = max(x_slice.min() - buffer, 0), min(x_slice.max() + buffer, x_max)
+        if len(y_slice) == 0:
+            y_start, y_end = 0, y_max
+        else:
+            y_start, y_end = max(y_slice.min() - buffer, 0), min(y_slice.max() + buffer, y_max)
+        return img[x_start:x_end, y_start:y_end]
+
+    def apply(self, img, **params):
+        return self.crop_roi(img, self.threshold, self.buffer)
+    
+    def get_transform_init_args_names(self):
+        return ('threshold', 'buffer')
+
+
+class AutoFlip(ImageOnlyTransform):
+
+    def __init__(self, sample_width=100, always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.sample_width = sample_width
+
+    def apply(self, img, **params):
+        if img[:, :self.sample_width].sum() <= img[:, -self.sample_width:].sum():
+            img = img[:, ::-1]
+        return img
+    
+    def get_transform_init_args_names(self):
+        return ('sample_width')
+    

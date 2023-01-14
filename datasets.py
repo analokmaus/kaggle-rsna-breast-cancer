@@ -10,7 +10,7 @@ from general import *
 class PatientLevelDataset(D.Dataset):
     def __init__(
         self, df, image_dir, target_cols=['cancer'], metadata_cols=[],
-        preprocess=None, transforms=None, 
+        preprocess=None, transforms=None, flip_lr=True,
         is_test=False, mixup_params=None, return_index=False):
 
         self.df = df
@@ -24,6 +24,7 @@ class PatientLevelDataset(D.Dataset):
         self.metadata_cols = metadata_cols
         self.preprocess = preprocess
         self.transforms = transforms
+        self.flip_lr = flip_lr
         self.is_test = is_test
         self.view_category = [['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']]
         if mixup_params:
@@ -80,7 +81,7 @@ class PatientLevelDataset(D.Dataset):
         elif img1 is None and not img0 is None:
             img1 = torch.zeros_like(img0)
 
-        if pid[1] == 'R':
+        if self.flip_lr and pid[1] == 'R': # do NOT use
             img0 = torch.flip(img0, dims=(2,))
             img1 = torch.flip(img1, dims=(2,))
 

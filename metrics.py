@@ -6,9 +6,10 @@ from kuma_utils.metrics import MetricTemplate
 class Pfbeta(nn.Module):
     '''
     '''
-    def __init__(self, return_thres=False):
+    def __init__(self, binarize=True, return_thres=False):
         super().__init__()
         self.return_thres = return_thres
+        self.bin = binarize
 
     def pfbeta(self, labels, predictions, beta=1.):
         y_true_count = 0
@@ -24,8 +25,10 @@ class Pfbeta(nn.Module):
                 cfp += prediction
 
         beta_squared = beta * beta
+        if ctp + cfp == 0:
+            return 0
         c_precision = ctp / (ctp + cfp)
-        c_recall = ctp / max(y_true_count, 1)  # avoid / 0
+        c_recall = ctp / y_true_count
         if (c_precision > 0 and c_recall > 0):
             result = (1 + beta_squared) * (c_precision * c_recall) / (beta_squared * c_precision + c_recall)
             return result
@@ -39,9 +42,12 @@ class Pfbeta(nn.Module):
         return f1s[idx], thres[idx]
 
     def forward(self, approx, target):
-        f1s, thres = self.optimal_f1(
-            target.detach().cpu().numpy(), approx.sigmoid().detach().cpu().numpy())
-        if self.return_thres:
-            return f1s[0], thres
+        if self.bin: # search for best binarization threshold
+            f1s, thres = self.optimal_f1(
+                target.detach().cpu().numpy(), approx.sigmoid().detach().cpu().numpy())
+            if self.return_thres:
+                return f1s[0], thres
+            else:
+                return f1s[0]
         else:
-            return f1s[0]
+            return self.pfbeta(target.detach().cpu().numpy(), approx.sigmoid().detach().cpu().numpy())[0]

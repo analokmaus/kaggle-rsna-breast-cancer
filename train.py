@@ -250,7 +250,9 @@ if __name__ == "__main__":
             trainer.model.set_temperature(torch.from_numpy(pred_logits).cuda(), target_fold.cuda())
             pred_logits = trainer.predict(valid_loader, progress_bar=opt.progress_bar)
         eval_score_fold, thres = eval_metric(torch.from_numpy(pred_logits), target_fold)
-        LOGGER(f'threshold: {thres:.5f}')
+        LOGGER(f'PFbeta: {eval_score_fold:.5f} threshold: {thres:.5f}')
+        for im, metric_f in enumerate(cfg.monitor_metrics):
+            LOGGER(f'Monitor metric {im}: {metric_f(torch.from_numpy(pred_logits), target_fold):.5f}')
         scores.append(eval_score_fold)
         outoffolds.append(pred_logits)
         torch.cuda.empty_cache()

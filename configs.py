@@ -52,8 +52,8 @@ class Baseline:
     scheduler_target = None
     batch_scheduler = False
     criterion = BCEWithLogitsLoss()
-    eval_metric = Pfbeta()
-    monitor_metrics = [AUC().torch]
+    eval_metric = Pfbeta(binarize=True)
+    monitor_metrics = [AUC().torch, Pfbeta(binarize=False)]
     amp = True
     parallel = None
     deterministic = False
@@ -241,6 +241,19 @@ class Model01(Dataset01):
     )
 
 
+class Model01v0(Model01):
+    name = 'model_01_v0'
+    preprocess = dict(
+        train=ImageToTile(tile_size=256, num_tiles=8, criterion='brightness', concat=False, dropout=0),
+        test=ImageToTile(tile_size=256, num_tiles=8, criterion='brightness', concat=False, dropout=0),
+    )
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5.]))
+    callbacks = [
+        EarlyStopping(patience=5, maximize=True, skip_epoch=5),
+        SaveSnapshot()
+    ]
+
+
 class Model02(Dataset01):
     name = 'model_02'
     model_params = dict(
@@ -269,7 +282,193 @@ class Model02loss0(Model02):
     ]
 
 
+class Model02aug0(Model02loss0):
+    name = 'model_02_aug0'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=30), 
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+
+
+class Model02aug1(Model02loss0):
+    name = 'model_02_aug1'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=30), 
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.ElasticTransform(),
+                A.GridDistortion(),
+                A.OpticalDistortion(),
+            ], p=0.25),
+            A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+
+
 class Model02ds0(Model02loss0):
     name = 'model_02_ds0'
     image_dir = Path('input/rsna-breast-cancer-detection/image_resized_1024')
     
+
+class Model02v1(Model02loss0):
+    name = 'model_02_v1'
+    model_params = dict(
+        classification_model='tf_efficientnet_b0',
+        pretrained=True,
+        spatial_pool=True,
+        custom_classifier='concat',
+    )
+
+
+class Model02v2(Model02loss0):
+    name = 'model_02_v2'
+    model_params = dict(
+        classification_model='tf_efficientnet_b0',
+        pretrained=True,
+        spatial_pool=True,
+        custom_classifier='gem',
+    )
+
+
+class Model02v3(Model02loss0):
+    name = 'model_02_v3'
+    model_params = dict(
+        classification_model='tf_efficientnet_b0',
+        pretrained=True,
+        spatial_pool=True,
+        custom_attention='triplet'
+    )
+
+
+
+class Baseline2(Baseline):
+    name = 'baseline_2'
+    dataset_params = dict(flip_lr=False)
+    preprocess = dict(
+        train=A.Compose([AutoFlip()]),
+        test=A.Compose([AutoFlip()]),
+    )
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=20),
+            A.VerticalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+    parallel = 'ddp'
+    image_dir = Path('input/rsna-breast-cancer-detection/image_resized_1024W')
+    model_params = dict(
+        classification_model='tf_efficientnet_b0',
+        pretrained=True,
+        spatial_pool=True,
+    )
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5.]))
+    callbacks = [
+        EarlyStopping(patience=5, maximize=True, skip_epoch=5),
+        SaveSnapshot()
+    ]
+
+
+class Aug04(Baseline2):
+    name = 'aug_04'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=20),
+            A.VerticalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.ElasticTransform(),
+                A.GridDistortion(),
+                A.OpticalDistortion(),
+            ], p=0.2),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+
+
+class Aug05(Baseline2):
+    name = 'aug_05'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=30),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.GridDistortion(),
+                A.OpticalDistortion(),
+            ], p=0.1),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+
+
+class Dataset02(Baseline2):
+    name = 'dataset_02'
+    image_dir = Path('input/rsna-breast-cancer-detection/image_resized_2048W')
+    preprocess = dict(
+        train=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)]),
+    )
+
+
+class Dataset02v0(Dataset02):
+    name = 'dataset_02_v0'
+    preprocess = dict(
+        train=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=160), A.Resize(1024, 512)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=160), A.Resize(1024, 512)]),
+    )
+    
+
+class Dataset02aug0(Dataset02):
+    name = 'dataset_02_aug0'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=20),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
