@@ -21,6 +21,7 @@ from loss_functions import *
 from metrics import *
 from transforms import *
 from architectures import *
+from training_extras import *
 
 
 class Baseline:
@@ -456,6 +457,15 @@ class Dataset02v0(Dataset02):
         train=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=160), A.Resize(1024, 512)]),
         test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=160), A.Resize(1024, 512)]),
     )
+
+
+class Dataset02mod0(Dataset02):
+    name = 'dataset_02_mod0'
+    model_params = dict(
+        classification_model='tf_efficientnet_b4',
+        pretrained=True,
+        spatial_pool=True,
+    )
     
 
 class Dataset02aug0(Dataset02):
@@ -467,6 +477,129 @@ class Dataset02aug0(Dataset02):
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+
+
+class Dataset02aug1(Dataset02):
+    name = 'dataset_02_aug1'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=30),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.GridDistortion(),
+                A.OpticalDistortion(),
+            ], p=0.1),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+
+
+class Dataset02v1(Dataset02aug1):
+    name = 'dataset_02_v1'
+    image_dir = Path('input/rsna-breast-cancer-detection/image_resized_2048V')
+
+
+class Dataset02v2(Dataset02aug1):
+    name = 'dataset_02_v2'
+    image_dir = Path('input/rsna-breast-cancer-detection/image_resized_2048V(0, 98)')
+
+
+class Baseline3(Dataset02):
+    name = 'baseline_3'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=30),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.GridDistortion(),
+                A.OpticalDistortion(),
+            ], p=0.1),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+    image_dir = Path('input/rsna-breast-cancer-detection/image_resized_2048V')
+
+
+class Model03(Baseline3):
+    name = 'model_03'
+    model_params = dict(
+        classification_model='tf_efficientnet_b4',
+        pretrained=True,
+        spatial_pool=True,
+    )
+
+
+class Model04(Baseline3):
+    name = 'model_04'
+    model = MultiLevelModel
+    model_params = dict(
+        global_model='tf_efficientnet_b0',
+        local_model='tf_efficientnet_b0',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+    )
+    criterion = MultiLevelLoss(pos_weight=torch.tensor([5.]))
+    hook = MultiLevelTrain()
+
+
+class Model04v0(Model04):
+    name = 'model_04_v0'
+    model_params = dict(
+        global_model='tf_efficientnet_b0',
+        local_model='tf_efficientnet_b4',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+    )
+
+
+class Model04v1(Model04):
+    name = 'model_04_v1'
+    criterion = MultiLevelLoss(pos_weight=torch.tensor([5.]), weights=(2, 2, 1))
+
+
+class Model04v2(Model04):
+    name = 'model_04_v2'
+    model_params = dict(
+        global_model='tf_efficientnet_b0',
+        local_model='tf_efficientnet_b0',
+        pretrained=True,
+        crop_size=64,
+        crop_num=16,
+    )
+
+
+class Aug06(Baseline3):
+    name = 'aug_06'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=30),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.GridDistortion(),
+                A.OpticalDistortion(),
+            ], p=0.1),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
         ]), 
         test=A.Compose([
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()

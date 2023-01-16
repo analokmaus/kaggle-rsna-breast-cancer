@@ -9,11 +9,15 @@ from general import DATA_DIR
 from tqdm.auto import tqdm
 from joblib import Parallel, delayed
 from pydicom.pixel_data_handlers import apply_windowing
+from pydicom.pixel_data_handlers.util import apply_voi_lut
 
 
 IMG_SIZE = 2048
-WINDOW = True
-EXPORT_DIR = DATA_DIR/f'image_resized_{IMG_SIZE}{"W" if WINDOW else ""}'
+WINDOW = False
+VOI_LUT = True
+# CLIP = None
+CLIP = (0, 95)
+EXPORT_DIR = DATA_DIR/f'image_resized_{IMG_SIZE}{"W" if WINDOW else ""}{"V" if VOI_LUT else ""}{CLIP if CLIP is not None else ""}'
 EXPORT_DIR.mkdir(exist_ok=True)
 N_JOBS = 40
 
@@ -45,10 +49,14 @@ def process(f, size=1024):
     #     return
 
     img = dicom.pixel_array
+    if CLIP is not None:
+        img = np.clip(img, np.percentile(img, CLIP[0]), np.percentile(img, CLIP[1]))
+    if VOI_LUT:
+        img = apply_voi_lut(img, dicom)
     if dicom.PhotometricInterpretation == "MONOCHROME1":
         img = img.max() - img
-    if WINDOW:
-        img = apply_windowing(img, dicom)
+    # if WINDOW:
+    #     img = apply_windowing(img, dicom)
     img = (img - img.min()) / (img.max() - img.min())
 
     img = cv2.resize(img, (size, size))

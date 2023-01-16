@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import timm
 from kuma_utils.torch.modules import AdaptiveConcatPool2d, AdaptiveGeM
 
@@ -135,12 +136,6 @@ class MultiViewModel(nn.Module):
             nn.ReLU(inplace=True), 
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
             nn.Linear(hidden_dim//2, num_classes))
-        self.feature_dim = feature_dim
-        self.hidden_dim = hidden_dim
-        self.dropout = dropout
-        self.num_classes = num_classes
-        self.num_view = num_view
-        self.spatial_pool = spatial_pool
 
     def forward(self, x): # (N x n_views x Ch x W x H)
         bs, n_view, ch, w, h = x.shape
@@ -180,3 +175,111 @@ class MultiInstanceModel(MultiViewModel):
         y = self.head(y)
         return y
     
+
+class MultiLevelModel(nn.Module):
+
+    def __init__(self,
+                 global_model='resnet18',
+                 global_model_params={},
+                 local_model='resnet18',
+                 local_model_params={},
+                 in_chans=1,
+                 num_classes=1,
+                 num_view=2,
+                 hidden_dim=512,
+                 dropout=0, 
+                 crop_size=256,
+                 crop_num=4,
+                 percent_t=0.02,
+                 pretrained=False):
+
+        super().__init__()
+
+        self.global_encoder = timm.create_model(
+            global_model,
+            pretrained=pretrained,
+            in_chans=in_chans,
+            **global_model_params
+        )
+        global_feature_dim = self.global_encoder.get_classifier().in_features
+        self.global_encoder.reset_classifier(0, '')
+        self.local_encoder = timm.create_model(
+            local_model,
+            pretrained=pretrained,
+            in_chans=in_chans,
+            **local_model_params
+        )
+        local_feature_dim = self.local_encoder.get_classifier().in_features
+        self.local_encoder.reset_classifier(0, '')
+        self.local_head = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear(local_feature_dim*num_view, hidden_dim), 
+            nn.ReLU(inplace=True), 
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(hidden_dim, num_classes))
+        self.concat_head = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear((global_feature_dim+local_feature_dim)*num_view, hidden_dim), 
+            nn.ReLU(inplace=True), 
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(hidden_dim, num_classes))
+        
+
+        self.localizer = nn.Conv2d(global_feature_dim, num_classes, (1, 1), bias=False)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.crop_size = crop_size
+        self.crop_num = crop_num
+        self.percent_t = percent_t
+
+    def crop_roi(self, x, cam): # current implementation is for 1 class only
+        crop_size = self.crop_size
+        crop_num = self.crop_num
+        bs, ch, h0, w0 = x.shape
+        # _, ch1, h1, w1 = cam.shape
+        cam_full = F.interpolate(cam, size=(h0, w0), mode='nearest')
+        x2 = torch.concat([x, cam_full], dim=1)
+        pad_h, pad_w = (crop_size - h0 % crop_size) % crop_size, (crop_size - w0 % crop_size) % crop_size
+        x2 = F.pad(
+            x2, (pad_w//2, pad_w-pad_w//2, pad_h//2, pad_h-pad_h//2, 0, 0), 
+            mode='constant', value=0)
+        _, _, h2, w2 = x2.shape
+        x2 = x2.view(bs, ch+1, h2//crop_size, crop_size, w2//crop_size, crop_size)
+        x2 = x2.permute(0, 2, 4, 1, 3, 5).contiguous()
+        x2 = x2.view(bs, -1, ch+1, crop_size, crop_size)
+        score = torch.mean(x2[:, :, -1:,  :, :], dim=(2, 3, 4))
+        x2 = x2[:, :, :-1, :, :] # drop cam
+        score_sort = torch.argsort(score, dim=1, descending=True)
+        x2 = x2[torch.arange(bs)[:, None], score_sort]
+        x2 = x2[:, :crop_num].clone()
+        return x2
+
+    def aggregate_cam(self, cam):
+        bs, ch, h, w = cam.shape
+        cam_flatten = cam.view(bs, ch, -1)
+        top_t = int(round(w*h*self.percent_t))
+        selected_area = cam_flatten.topk(top_t, dim=2)[0]
+        return selected_area.mean(dim=2)
+
+    def forward_mil(self, x):
+        bs, n_inst, ch, w, h = x.shape
+        x = x.view(bs*n_inst, ch, w, h)
+        y = self.local_encoder(x) # (2Nn_inst x Ch2 x 1 x 1)
+        _, ch2, w2, h2 = y.shape
+        y = y.view(bs, n_inst, ch2, w2, h2).permute(0, 2, 1, 3, 4)\
+            .contiguous().view(bs, ch2, n_inst*w2, h2)
+        y = self.global_pool(y) 
+        return y
+
+    def forward(self, x): # (N x n_views x Ch x W x H)
+        bs, n_view, ch, w, h = x.shape
+        x = x.view(bs*n_view, ch, w, h)
+        global_features = self.global_encoder(x) # (Nn_views x Ch2 x W2 x H2)
+        global_cam= self.localizer(global_features) # (Nn_views x 1 x W2 x H2)
+        x2 = self.crop_roi(x, global_cam.sigmoid()) # (Nn_views x n_crop x 1 x Wl x Hl)
+        local_features = self.forward_mil(x2).view(bs, n_view, -1) # (N x n_views x Ch3)
+        global_features = self.global_pool(global_features).view(bs, n_view, -1)  # (N x n_views x Ch2)
+        concat_features = torch.concat([local_features, global_features], dim=2) # (bs x n_views x Ch2+Ch3)
+        y_global = self.aggregate_cam(global_cam).view(bs, n_view, -1).amax(dim=1)
+        y_local = self.local_head(local_features)
+        y_concat = self.concat_head(concat_features)
+        return y_concat, y_global, y_local

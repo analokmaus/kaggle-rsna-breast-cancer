@@ -122,5 +122,5 @@ class AutoFlip(ImageOnlyTransform):
         return img
     
     def get_transform_init_args_names(self):
-        return ('sample_width')
+        return ('sample_width', 'sample_width')
     

@@ -75,3 +75,24 @@ class FocalLoss(nn.Module):
 
     def __repr__(self):
         return f'FocalLoss(smoothing={self.smoothing})'
+
+
+class MultiLevelLoss(nn.Module):
+    '''
+    weights: (float, float, float) # concat, global, local
+    '''
+    def __init__(self, weights=(1., 1., 1.), pos_weight=None):
+        super().__init__()
+        self.weights = weights
+        self.pos_weight = pos_weight
+        self.loss = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
+    
+    def forward(self, inputs, target):
+        loss = 0
+        for i, w in enumerate(self.weights):
+            loss += w * self.loss(inputs[i], target)
+        return loss / sum(self.weights)
+    
+    def __repr__(self):
+        return f'MultiLevel(weights={self.weights}, pos_weight={self.pos_weight})'
+    
