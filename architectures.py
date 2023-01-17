@@ -50,7 +50,8 @@ class ClassificationModel(nn.Module):
             self.encoder.patch_embed = CustomHybdridEmbed(
                 self.encoder.patch_embed.proj, 
                 channel_in=in_chans,
-                transformer_original_input_size=(1, in_chans, *self.encoder.patch_embed.img_size)
+                transformer_original_input_size=(1, in_chans, *self.encoder.patch_embed.img_size),
+                pretrained=pretrained
             )
             self.is_tranformer = True
         else:
@@ -121,7 +122,8 @@ class MultiViewModel(nn.Module):
             self.encoder.patch_embed = CustomHybdridEmbed(
                 self.encoder.patch_embed.proj, 
                 channel_in=in_chans,
-                transformer_original_input_size=(1, in_chans, *self.encoder.patch_embed.img_size)
+                transformer_original_input_size=(1, in_chans, *self.encoder.patch_embed.img_size),
+                pretrained=pretrained
             )
             self.is_tranformer = True
         else:
@@ -136,13 +138,15 @@ class MultiViewModel(nn.Module):
             nn.ReLU(inplace=True), 
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
             nn.Linear(hidden_dim//2, num_classes))
+        
+        self.spatial_pool = spatial_pool
 
     def forward(self, x): # (N x n_views x Ch x W x H)
         bs, n_view, ch, w, h = x.shape
         x = x.view(bs*n_view, ch, w, h)
         y = self.attention(self.encoder(x)) # (2n_views x Ch2 x W2 x H2)
         if self.is_tranformer: # TODO
-            y = y.mean(dim=1)
+            y = y.mean(dim=1).view(bs, n_view, -1).mean(dim=1)
         else:
             if self.spatial_pool:
                 _, ch2, w2, h2 = y.shape
@@ -166,7 +170,8 @@ class MultiInstanceModel(MultiViewModel):
         x = x.view(bs*n_view*n_inst, ch, w, h)
         y = self.attention(self.encoder(x)) # (2Nn_inst x Ch2 x 1 x 1)
         if self.is_tranformer: # TODO
-            y = y.mean(dim=1)
+            _, ch2, f = y.shape
+            y = y.view(bs, n_view*n_inst*ch2, f).mean(dim=1)
         else:
             _, ch2, w2, h2 = y.shape
             y = y.view(bs, n_view*n_inst, ch2, w2, h2).permute(0, 2, 1, 3, 4)\
@@ -191,6 +196,7 @@ class MultiLevelModel(nn.Module):
                  crop_size=256,
                  crop_num=4,
                  percent_t=0.02,
+                 local_attention=False,
                  pretrained=False):
 
         super().__init__()
@@ -203,6 +209,10 @@ class MultiLevelModel(nn.Module):
         )
         global_feature_dim = self.global_encoder.get_classifier().in_features
         self.global_encoder.reset_classifier(0, '')
+        if 'Transformer' in self.global_encoder.__class__.__name__:
+            self.is_transformer_global = True
+        else:
+            self.is_transformer_global = False
         self.local_encoder = timm.create_model(
             local_model,
             pretrained=pretrained,
@@ -211,6 +221,15 @@ class MultiLevelModel(nn.Module):
         )
         local_feature_dim = self.local_encoder.get_classifier().in_features
         self.local_encoder.reset_classifier(0, '')
+        if 'Transformer' in self.local_encoder.__class__.__name__:
+            self.is_transformer_local = True
+        else:
+            self.is_transformer_local = False
+        if local_attention:
+            self.local_attention = TripletAttention()
+        else:
+            self.local_attention = nn.Identity()
+
         self.local_head = nn.Sequential(
             nn.Flatten(start_dim=1),
             nn.Linear(local_feature_dim*num_view, hidden_dim), 
@@ -230,6 +249,7 @@ class MultiLevelModel(nn.Module):
         self.crop_size = crop_size
         self.crop_num = crop_num
         self.percent_t = percent_t
+        self.num_view = num_view
 
     def crop_roi(self, x, cam): # current implementation is for 1 class only
         crop_size = self.crop_size
@@ -263,23 +283,37 @@ class MultiLevelModel(nn.Module):
     def forward_mil(self, x):
         bs, n_inst, ch, w, h = x.shape
         x = x.view(bs*n_inst, ch, w, h)
-        y = self.local_encoder(x) # (2Nn_inst x Ch2 x 1 x 1)
-        _, ch2, w2, h2 = y.shape
-        y = y.view(bs, n_inst, ch2, w2, h2).permute(0, 2, 1, 3, 4)\
-            .contiguous().view(bs, ch2, n_inst*w2, h2)
-        y = self.global_pool(y) 
+        y = self.local_encoder(x) # (2Nn_inst x Ch2 x W x H) or
+        if self.is_transformer_local:
+            _, ch2, f = y.shape
+            y = y.view(bs, n_inst, ch2, f).view(bs, ch2*n_inst, f).mean(dim=1)
+        else:
+            _, ch2, w2, h2 = y.shape
+            y = y.view(bs, n_inst, ch2, w2, h2).permute(0, 2, 1, 3, 4)\
+                .contiguous().view(bs, ch2, n_inst*w2, h2)
+            y = self.global_pool(self.local_attention(y))
         return y
 
+    def squeeze_view(self, x):
+        bs, _, ch, w, h = x.shape
+        x = x.view(bs*self.num_view, ch, w, h)
+        return x
+
     def forward(self, x): # (N x n_views x Ch x W x H)
-        bs, n_view, ch, w, h = x.shape
-        x = x.view(bs*n_view, ch, w, h)
+        bs = x.shape[0]
+        if self.num_view > 1:
+            x = self.squeeze_view(x)
         global_features = self.global_encoder(x) # (Nn_views x Ch2 x W2 x H2)
         global_cam= self.localizer(global_features) # (Nn_views x 1 x W2 x H2)
         x2 = self.crop_roi(x, global_cam.sigmoid()) # (Nn_views x n_crop x 1 x Wl x Hl)
-        local_features = self.forward_mil(x2).view(bs, n_view, -1) # (N x n_views x Ch3)
-        global_features = self.global_pool(global_features).view(bs, n_view, -1)  # (N x n_views x Ch2)
+        local_features = self.forward_mil(x2)
+        global_features = self.global_pool(global_features)
+        y_global = self.aggregate_cam(global_cam)
+        if self.num_view > 1:
+            local_features = local_features.view(bs, self.num_view, -1) # (N x n_views x Ch3)
+            global_features = global_features.view(bs, self.num_view, -1) # (N x n_views x Ch2)
+            y_global = y_global.view(bs, self.num_view, -1).amax(dim=1) # 
         concat_features = torch.concat([local_features, global_features], dim=2) # (bs x n_views x Ch2+Ch3)
-        y_global = self.aggregate_cam(global_cam).view(bs, n_view, -1).amax(dim=1)
         y_local = self.local_head(local_features)
         y_concat = self.concat_head(concat_features)
         return y_concat, y_global, y_local

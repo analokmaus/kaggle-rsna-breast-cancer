@@ -208,7 +208,7 @@ if __name__ == "__main__":
 
 
     '''
-    Calibration
+    Prediction and calibration
     '''
     outoffolds = []
     selfpreditions = np.full((cfg.cv, len(train), 1), 0, dtype=np.float32)
@@ -240,15 +240,29 @@ if __name__ == "__main__":
         del checkpoint; gc.collect()
         if cfg.parallel == 'ddp':
             model = convert_sync_batchnorm(model)
+            inference_parallel = None
+            # inference_parallel = 'dp'
+            # valid_loader = D.DataLoader(
+            #     valid_data, batch_size=cfg.batch_size*4, shuffle=False,
+            #     num_workers=opt.num_workers, pin_memory=True)
+        else:
+            inference_parallel = None
 
         trainer = TorchTrainer(model, serial=f'fold{fold}', device=opt.gpu)
+        trainer.logger = LOGGER
         trainer.register(hook=cfg.hook, callbacks=cfg.callbacks)
-        pred_logits = trainer.predict(valid_loader, progress_bar=opt.progress_bar)
+        pred_logits = trainer.predict(valid_loader, parallel=inference_parallel, progress_bar=opt.progress_bar)
         target_fold = torch.from_numpy(valid_data.get_labels())
-        if opt.calibrate:
+        if opt.calibrate: # WIP
             trainer.model = TemperatureScaler(trainer.model).cuda()
             trainer.model.set_temperature(torch.from_numpy(pred_logits).cuda(), target_fold.cuda())
             pred_logits = trainer.predict(valid_loader, progress_bar=opt.progress_bar)
+        if cfg.hook.__class__.__name__ == 'SingleImageAggregatedTrain': # max aggregation
+            valid_fold['prediction'] = pred_logits.reshape(-1)
+            agg_df = valid_fold.groupby(['patient_id', 'laterality']).agg(
+                {'prediction': 'max', 'cancer': 'first'})
+            pred_logits = agg_df['prediction'].values.reshape(-1, 1)
+            target_fold = torch.from_numpy(agg_df['cancer'].values.reshape(-1, 1))
         eval_score_fold, thres = eval_metric(torch.from_numpy(pred_logits), target_fold)
         LOGGER(f'PFbeta: {eval_score_fold:.5f} threshold: {thres:.5f}')
         for im, metric_f in enumerate(cfg.monitor_metrics):

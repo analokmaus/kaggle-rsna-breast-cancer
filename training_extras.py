@@ -1,4 +1,5 @@
 import torch
+import pandas as pd
 from torch.distributions.beta import Beta
 from kuma_utils.torch.utils import freeze_module
 from kuma_utils.torch.hooks import SimpleHook
@@ -57,6 +58,69 @@ class MultiLevelTrain(SimpleHook):
 
     def __repr__(self) -> str:
         return f'MultiLevelTrain()'
+
+
+class SingleImageAggregatedTrain(SimpleHook):
+    '''
+    '''
+
+    def __init__(self, evaluate_in_batch=False, multilevel=False):
+        super().__init__(evaluate_in_batch=evaluate_in_batch)
+        self.multilevel = multilevel
+
+    def _evaluate(self, trainer, approx, target):
+        group_ids = trainer.epoch_storage['group_id'].cpu().numpy().reshape(-1)
+        lateralities = trainer.epoch_storage['laterality'].cpu().numpy().reshape(-1)
+        approx = approx.cpu().float().numpy().reshape(-1)
+        target = target.cpu().float().numpy().reshape(-1)
+        agg_df = pd.DataFrame(
+            {'patient_id': group_ids, 'laterality': lateralities, 
+             'approx': approx, 'target': target}).groupby(['patient_id', 'laterality']).agg(
+                {'approx': 'max', 'target': 'max'})
+
+        if trainer.eval_metric is None:
+            metric_score = None
+        else:
+            metric_score = trainer.eval_metric(
+                torch.from_numpy(agg_df['approx'].values.reshape(-1, 1)), 
+                torch.from_numpy(agg_df['target'].values.reshape(-1, 1)))
+        monitor_score = []
+        for monitor_metric in trainer.monitor_metrics:
+            monitor_score.append(
+                monitor_metric(
+                    torch.from_numpy(agg_df['approx'].values.reshape(-1, 1)), 
+                    torch.from_numpy(agg_df['target'].values.reshape(-1, 1))))
+        return metric_score, monitor_score
+
+    def evaluate_batch(self, trainer, inputs, approx):
+        pass
+    
+    def forward_train(self, trainer, inputs):
+        input_t, target_t, group_id, laterality = inputs
+        storage = trainer.epoch_storage
+        storage['group_id'].append(group_id)
+        storage['laterality'].append(laterality)
+        if self.multilevel:
+            approx0, approx1, approx2 = trainer.model(input_t)
+            loss = trainer.criterion((approx0, approx1, approx2), target_t)
+        else:
+            approx0 = trainer.model(input_t)
+            loss = trainer.criterion(approx0, target_t)
+        storage['approx'].append(approx0.detach())
+        storage['target'].append(target_t)
+        return loss, approx0.detach()
+
+    forward_valid = forward_train
+
+    def forward_test(self, trainer, inputs):
+        if self.multilevel:
+            approx, _, _ = trainer.model(inputs[0])
+        else:
+            approx = trainer.model(inputs[0])
+        return approx
+
+    def __repr__(self) -> str:
+        return f'SingleImageAggregatedTrain()'
 
 
 class StepDataset(CallbackTemplate):

@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import torch.nn as nn
 from kuma_utils.metrics import MetricTemplate
 
@@ -42,12 +43,14 @@ class Pfbeta(nn.Module):
         return f1s[idx], thres[idx]
 
     def forward(self, approx, target):
+        if isinstance(approx, torch.Tensor):
+            approx = approx.sigmoid().detach().cpu().numpy()
+            target = target.detach().cpu().numpy()
         if self.bin: # search for best binarization threshold
-            f1s, thres = self.optimal_f1(
-                target.detach().cpu().numpy(), approx.sigmoid().detach().cpu().numpy())
+            f1s, thres = self.optimal_f1(target, approx)
             if self.return_thres:
                 return f1s[0], thres
             else:
                 return f1s[0]
         else:
-            return self.pfbeta(target.detach().cpu().numpy(), approx.sigmoid().detach().cpu().numpy())[0]
+            return self.pfbeta(target, approx)[0]

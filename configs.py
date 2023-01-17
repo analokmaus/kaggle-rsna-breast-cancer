@@ -585,6 +585,71 @@ class Model04v2(Model04):
     )
 
 
+class Model04v3(Model04):
+    name = 'model_04_v3'
+    model_params = dict(
+        global_model='tf_efficientnet_b0',
+        local_model='tf_efficientnet_b0',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+        local_attention=True,
+    )
+
+
+class Model04v4(Model04):
+    name = 'model_04_v4'
+    model_params = dict(
+        global_model='tf_efficientnet_b0',
+        local_model='tf_efficientnet_b0',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+        percent_t=0.1
+    )
+
+
+class Model04v4si(Model04v4):
+    name = 'model_04_v4si'
+    model_params = dict(
+        global_model='tf_efficientnet_b0',
+        local_model='tf_efficientnet_b0',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+        percent_t=0.1,
+        num_view=1,
+    )
+    dataset = ImageLevelDataset
+    dataset_params = dict()
+    hook = SingleImageAggregatedTrain(multilevel=True)
+
+
+class Model04v5(Model04):
+    name = 'model_04_v5'
+    model_params = dict(
+        global_model='convnext_nano.in12k_ft_in1k',
+        local_model='convnext_nano.in12k_ft_in1k',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+    )
+    optimizer_params = dict(lr=5e-6, weight_decay=1e-6)
+    optimizer = optim.AdamW
+
+
+class Model04v6(Model04):
+    name = 'model_04_v6'
+    model_params = dict(
+        global_model='convnext_nano.in12k_ft_in1k',
+        local_model='vit_tiny_patch16_224.augreg_in21k_ft_in1k',
+        pretrained=True,
+        crop_size=224,
+        crop_num=4,
+    )
+    optimizer_params = dict(lr=1e-5, weight_decay=1e-6)
+
+
 class Aug06(Baseline3):
     name = 'aug_06'
     transforms = dict(
@@ -605,3 +670,60 @@ class Aug06(Baseline3):
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
         ]), 
     )
+
+
+class Aug06si(Aug06):
+    name = 'aug_06_si'
+    model = ClassificationModel
+    model_params = dict(
+        classification_model='tf_efficientnet_b0',
+        pretrained=True)
+    dataset = ImageLevelDataset
+    dataset_params = dict()
+    hook = SingleImageAggregatedTrain()
+    
+
+class Model05(Aug06):
+    name = 'model_05'
+    model_params = dict(
+        classification_model='convnext_nano.in12k_ft_in1k',
+        pretrained=True,
+        spatial_pool=True,)
+    optimizer_params = dict(lr=1e-5, weight_decay=1e-6)
+
+
+class Model05rep(Model05):
+    name = 'model_05_rep'
+
+
+class Model05lr0(Model05):
+    name = 'model_05_lr0'
+    optimizer = optim.AdamW
+
+
+class Model05v0(Model05):
+    name = 'model_05_v0'
+    model_params = dict(
+        classification_model='tf_efficientnetv2_s.in21k_ft_in1k',
+        pretrained=True,
+        spatial_pool=True)
+    optimizer_params = dict(lr=2e-4, weight_decay=1e-6)
+
+
+class Model05v1(Model05):
+    name = 'model_05_v1'
+    model_params = dict(
+        classification_model='vit_tiny_patch16_384.augreg_in21k_ft_in1k',
+        pretrained=True,
+        spatial_pool=True)
+    optimizer_params = dict(lr=5e-4, weight_decay=1e-6)
+
+
+class Model05v2(Model05):
+    name = 'model_05_v2'
+    model_params = dict(
+        classification_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True)
+    optimizer = optim.AdamW
+    

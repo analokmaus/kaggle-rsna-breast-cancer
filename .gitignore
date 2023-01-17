@@ -28,4 +28,4 @@ qsub.py
 *.job*
 *.log
 submission.csv
-old/results/
+old/

@@ -110,16 +110,18 @@ class CustomHybdridEmbed(nn.Module):
         self,
         decoder_proj_conv,
         channel_in=2,
-        encoder_name="inception_v4",
+        encoder_name="tf_efficientnet_b0",
+        # encoder_name="inception_v4",
         encoder_out_layer_num=[2],
         transformer_original_input_size=(1, 3, 224, 224),
+        pretrained=False,
     ):
         super().__init__()
         self.encoder = timm.create_model(
             encoder_name,
             features_only=True,
             out_indices=encoder_out_layer_num,
-            pretrained=True,
+            pretrained=pretrained,
             in_chans=channel_in,
         )
 
