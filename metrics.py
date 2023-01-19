@@ -7,12 +7,17 @@ from kuma_utils.metrics import MetricTemplate
 class Pfbeta(nn.Module):
     '''
     '''
-    def __init__(self, binarize=True, return_thres=False):
+    def __init__(self, binarize=True, return_thres=False, average_both=False):
         super().__init__()
         self.return_thres = return_thres
         self.bin = binarize
+        self.avg_both = average_both
 
     def pfbeta(self, labels, predictions, beta=1.):
+        if len(labels.shape) == 2:
+            labels = labels.reshape(-1)
+        if len(predictions.shape) == 2:
+            predictions = predictions.reshape(-1)
         y_true_count = 0
         ctp = 0
         cfp = 0
@@ -42,15 +47,26 @@ class Pfbeta(nn.Module):
         idx = np.argmax(f1s)
         return f1s[idx], thres[idx]
 
+    def optimal_f1_all(self, labels, predictions):
+        thres = np.linspace(0, 1, 101)
+        f1s = [self.pfbeta(labels, predictions > thr) for thr in thres]
+        return f1s, thres
+
     def forward(self, approx, target):
         if isinstance(approx, torch.Tensor):
             approx = approx.sigmoid().detach().cpu().numpy()
             target = target.detach().cpu().numpy()
-        if self.bin: # search for best binarization threshold
+        if self.avg_both:
+            f1s, thres = self.optimal_f1(target, approx)
+            bin_score = f1s
+            score = self.pfbeta(target, approx)
+            return (bin_score + score) / 2
+        elif self.bin: # search for best binarization threshold
             f1s, thres = self.optimal_f1(target, approx)
             if self.return_thres:
-                return f1s[0], thres
+                return f1s, thres
             else:
-                return f1s[0]
+                return f1s
         else:
-            return self.pfbeta(target, approx)[0]
+            return self.pfbeta(target, approx)
+

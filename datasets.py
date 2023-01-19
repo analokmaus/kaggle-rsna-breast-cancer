@@ -9,7 +9,7 @@ from general import *
 
 class PatientLevelDataset(D.Dataset):
     def __init__(
-        self, df, image_dir, target_cols=['cancer'], metadata_cols=[],
+        self, df, image_dir, target_cols=['cancer'], metadata_cols=[], sep='/', 
         preprocess=None, transforms=None, flip_lr=True, sample_num=1,
         is_test=False, mixup_params=None, return_index=False):
 
@@ -35,6 +35,7 @@ class PatientLevelDataset(D.Dataset):
         else:
             self.mu = False
         self.rt_idx = return_index
+        self.sep = sep
 
     def __len__(self):
         return len(self.df_dict) # num_patients
@@ -62,7 +63,8 @@ class PatientLevelDataset(D.Dataset):
         scores = []
         images = []
         for pid, iid in df[['patient_id', 'image_id']].values:
-            img_path = self.image_dir/f'{pid}/{iid}.png'
+            # img_path = self.image_dir/f'{pid}/{iid}.png'
+            img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
             img = cv2.imread(str(img_path))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             scores.append(img.mean())
@@ -86,7 +88,7 @@ class PatientLevelDataset(D.Dataset):
     def _load_data(self, idx):
         pid = self.pids[idx]
         pdf = self.df_dict[pid]
-        view0 = pdf.query('view.isin(@self.view_category[0])')
+        view0 = pdf.loc[pdf['view'].isin(self.view_category[0])]
         if len(view0) == 0:
             img0 = None
         else:
@@ -94,10 +96,11 @@ class PatientLevelDataset(D.Dataset):
                 img0 = self._load_best_image(view0)
             else:
                 view0 = view0.sample().iloc[0]
-                path0 = self.image_dir/f'{view0.patient_id}/{view0.image_id}.png'
+                path0 = self.image_dir/f'{view0.patient_id}{self.sep}{view0.image_id}.png'
                 img0 = self._load_image(path0) # (Ch x W x H) or (T x Ch x W x H)
 
-        view1 = pdf.query('view.isin(@self.view_category[1])')
+        # view1 = pdf.query('view.isin(@self.view_category[1])')
+        view1 = pdf.loc[pdf['view'].isin(self.view_category[1])]
         if len(view1) == 0:
             img1 = None
         else:
@@ -105,7 +108,7 @@ class PatientLevelDataset(D.Dataset):
                 img1 = self._load_best_image(view1)
             else:
                 view1 = view1.sample().iloc[0]
-                path1 = self.image_dir/f'{view1.patient_id}/{view1.image_id}.png'
+                path1 = self.image_dir/f'{view1.patient_id}{self.sep}{view1.image_id}.png'
                 img1 = self._load_image(path1)
 
         if img0 is None and not img1 is None:
@@ -147,7 +150,7 @@ class PatientLevelDataset(D.Dataset):
 
 class ImageLevelDataset(D.Dataset):
     def __init__(
-        self, df, image_dir, target_cols=['cancer'], metadata_cols=[],
+        self, df, image_dir, target_cols=['cancer'], metadata_cols=[], sep='/', 
         preprocess=None, transforms=None,
         is_test=False, mixup_params=None, return_index=False, return_id=True):
 
@@ -166,6 +169,7 @@ class ImageLevelDataset(D.Dataset):
             self.mu = False
         self.rt_idx = return_index
         self.rt_id = return_id
+        self.sep = sep
 
     def __len__(self):
         return len(self.df)
@@ -191,7 +195,7 @@ class ImageLevelDataset(D.Dataset):
 
     def _load_data(self, idx):
         pdf = self.df.iloc[idx]
-        path0 = self.image_dir/f'{pdf.patient_id}/{pdf.image_id}.png'
+        path0 = self.image_dir/f'{pdf.patient_id}{self.sep}{pdf.image_id}.png'
         img0 = self._load_image(path0) # (Ch x W x H) or (T x Ch x W x H)
         label = torch.tensor([pdf[self.target_cols].values[0]]).float()
         return img0, label

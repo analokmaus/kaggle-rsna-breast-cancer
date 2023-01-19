@@ -8,7 +8,10 @@ from sklearn.model_selection import StratifiedGroupKFold
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 from timm import create_model
-from exhaustive_weighted_random_sampler import ExhaustiveWeightedRandomSampler
+try:
+    from exhaustive_weighted_random_sampler import ExhaustiveWeightedRandomSampler
+except:
+    ExhaustiveWeightedRandomSampler = None
 
 from kuma_utils.torch.callbacks import (
     EarlyStopping, SaveSnapshot, SaveEveryEpoch, SaveAllSnapshots)
@@ -62,7 +65,7 @@ class Baseline:
     max_grad_norm = 100
     hook = TrainHook()
     callbacks = [
-        EarlyStopping(patience=5, maximize=True, skip_epoch=0),
+        EarlyStopping(patience=6, maximize=True, skip_epoch=0),
         SaveSnapshot()
     ]
 
@@ -250,7 +253,7 @@ class Model01v0(Model01):
     )
     criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5.]))
     callbacks = [
-        EarlyStopping(patience=5, maximize=True, skip_epoch=5),
+        EarlyStopping(patience=6, maximize=True, skip_epoch=5),
         SaveSnapshot()
     ]
 
@@ -278,7 +281,7 @@ class Model02loss0(Model02):
     name = 'model_02_loss0'
     criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5.]))
     callbacks = [
-        EarlyStopping(patience=5, maximize=True, skip_epoch=5),
+        EarlyStopping(patience=6, maximize=True, skip_epoch=5),
         SaveSnapshot()
     ]
 
@@ -397,7 +400,7 @@ class Baseline2(Baseline):
     )
     criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([5.]))
     callbacks = [
-        EarlyStopping(patience=5, maximize=True, skip_epoch=5),
+        EarlyStopping(patience=6, maximize=True, skip_epoch=5),
         SaveSnapshot()
     ]
 
@@ -726,4 +729,79 @@ class Model05v2(Model05):
         pretrained=True,
         spatial_pool=True)
     optimizer = optim.AdamW
-    
+
+
+class Model05v2lr0(Model05v2):
+    name = 'model_05_v2_lr0'
+    optimizer = optim.Adam
+
+
+class Model05v2si(Model05v2):
+    name = 'model_05_v2_si'
+    model = ClassificationModel
+    model_params = dict(
+        classification_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        pretrained=True)
+    dataset = ImageLevelDataset
+    dataset_params = dict()
+    hook = SingleImageAggregatedTrain()
+
+
+class Model05v3(Model05):
+    name = 'model_05_v3'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True)
+    optimizer = optim.AdamW
+    eval_metric = Pfbeta(average_both=True)
+    monitor_metrics = [AUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True),]
+
+
+class Model05v3val(Model05v3):
+    name = 'model_05_v3_val'
+    eval_metric = Pfbeta(binarize=True)
+    monitor_metrics = [AUC().torch, Pfbeta(binarize=False)]
+
+
+class Model05v4(Model05):
+    name = 'model_05_v4'
+    model_params = dict(
+        classification_model='convnext_base.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True)
+    optimizer = optim.AdamW
+    eval_metric = Pfbeta(average_both=True)
+    monitor_metrics = [AUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True)]
+
+
+class Model05v4val(Model05v4):
+    name = 'model_05_v4_val'
+    eval_metric = Pfbeta(binarize=True)
+    monitor_metrics = [AUC().torch, Pfbeta(binarize=False)]
+
+
+class Res00(Model05v2):
+    name = 'res_00'
+    preprocess = dict(
+        train=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)]),
+    )
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=30),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.GridDistortion(),
+                A.OpticalDistortion(),
+            ], p=0.1),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=16, max_height=96, max_width=96, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )

@@ -212,7 +212,8 @@ if __name__ == "__main__":
     '''
     outoffolds = []
     selfpreditions = np.full((cfg.cv, len(train), 1), 0, dtype=np.float32)
-    eval_metric = Pfbeta(return_thres=True)
+    eval_metric = Pfbeta(binarize=True, return_thres=True)
+    thresholds = []
     for fold, (train_idx, valid_idx) in enumerate(fold_iter):
 
         if not (export_dir/f'fold{fold}.pt').exists():
@@ -269,12 +270,14 @@ if __name__ == "__main__":
             LOGGER(f'Monitor metric {im}: {metric_f(torch.from_numpy(pred_logits), target_fold):.5f}')
         scores.append(eval_score_fold)
         outoffolds.append(pred_logits)
+        thresholds.append(thres)
         torch.cuda.empty_cache()
     
     with open(str(export_dir/'predictions.pickle'), 'wb') as f:
         pickle.dump({
             'folds': fold_iter,
-            'outoffolds': outoffolds
+            'outoffolds': outoffolds, 
+            'thresholds': thresholds
         }, f)
 
     LOGGER(f'scores: {scores}')
