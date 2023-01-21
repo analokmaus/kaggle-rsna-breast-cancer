@@ -631,14 +631,16 @@ class Model04v4si(Model04v4):
 class Model04v5(Model04):
     name = 'model_04_v5'
     model_params = dict(
-        global_model='convnext_nano.in12k_ft_in1k',
-        local_model='convnext_nano.in12k_ft_in1k',
+        global_model='convnext_small.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
         pretrained=True,
         crop_size=128,
         crop_num=8,
     )
-    optimizer_params = dict(lr=5e-6, weight_decay=1e-6)
+    optimizer_params = dict(lr=1e-5, weight_decay=1e-6)
     optimizer = optim.AdamW
+    eval_metric = Pfbeta(average_both=True)
+    monitor_metrics = [AUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True)]
 
 
 class Model04v6(Model04):
@@ -764,6 +766,16 @@ class Model05v3val(Model05v3):
     monitor_metrics = [AUC().torch, Pfbeta(binarize=False)]
 
 
+class Model05v3loss0(Model05v3):
+    name = 'model_05_v3_loss0'
+    criterion = nn.BCEWithLogitsLoss()
+
+
+class Model05v3loss1(Model05v3):
+    name = 'model_05_v3_loss1'
+    criterion = FocalLoss()
+
+
 class Model05v4(Model05):
     name = 'model_05_v4'
     model_params = dict(
@@ -773,6 +785,7 @@ class Model05v4(Model05):
     optimizer = optim.AdamW
     eval_metric = Pfbeta(average_both=True)
     monitor_metrics = [AUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True)]
+    criterion = nn.BCEWithLogitsLoss()
 
 
 class Model05v4val(Model05v4):
@@ -783,6 +796,10 @@ class Model05v4val(Model05v4):
 
 class Res00(Model05v2):
     name = 'res_00'
+    optimizer = optim.AdamW
+    eval_metric = Pfbeta(average_both=True)
+    monitor_metrics = [AUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True),]
+    criterion = nn.BCEWithLogitsLoss()
     preprocess = dict(
         train=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)]),
         test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)]),
@@ -805,3 +822,18 @@ class Res00(Model05v2):
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
         ]), 
     )
+    
+
+class Model06(Model05v3loss0):
+    name = 'model_06'
+    dataset = PatientLevelDataset2
+    dataset_params = dict(
+        sample_num=2
+    )
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True,
+        num_view=4,
+    )
+    batch_size = 8
