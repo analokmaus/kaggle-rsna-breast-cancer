@@ -110,6 +110,68 @@ class CropROI(ImageOnlyTransform):
         return ('threshold', 'buffer')
 
 
+class RandomCropROI(CropROI):
+
+    def __init__(self, threshold=(0.8, 1.2), buffer=(0, 160), always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.threshold = threshold
+        self.buffer = buffer
+
+    def apply(self, img, **params):
+        thres = np.random.uniform(*self.threshold)
+        buf = np.random.randint(*self.buffer)
+        return self.crop_roi(img, thres, buf)
+
+
+class CropROI2(ImageOnlyTransform):
+
+    def __init__(self, threshold=20, buffer=30, always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.threshold = threshold
+        self.buffer = buffer
+
+    def crop_roi(self, X, threshold=20, buffer=50):
+        '''
+        https://www.kaggle.com/code/vslaykovsky/rsna-cut-off-empty-space-from-images
+        '''
+        ymax, xmax = X.shape
+        X = X[10:-10, 10:-10]
+        # regions of non-empty pixels
+        output= cv2.connectedComponentsWithStats((X > threshold).astype(np.uint8)[:, :, None], 8, cv2.CV_32S)
+        # stats.shape == (N, 5), where N is the number of regions, 5 dimensions correspond to:
+        # left, top, width, height, area_size
+        stats = output[2]
+        # finding max area which always corresponds to the breast data. 
+        idx = stats[1:, 4].argmax() + 1
+        x1, y1, w, h = stats[idx][:4]
+        x2 = x1 + w
+        y2 = y1 + h
+        x1 = max(10, x1-buffer)
+        x2 = min(xmax-10, x2+buffer)
+        y1 = max(10, y1-buffer)
+        y2 = min(ymax-10, y2+buffer)
+        return  X[y1:y2, x1:x2]
+
+    def apply(self, img, **params):
+        return self.crop_roi(img, self.threshold, self.buffer)
+    
+    def get_transform_init_args_names(self):
+        return ('threshold', 'buffer')
+
+
+class RandomCropROI2(CropROI2):
+
+    def __init__(self, threshold=(8, 20), buffer=(0, 120), always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.threshold = threshold
+        self.buffer = buffer
+
+    def apply(self, img, **params):
+        thres = np.random.randint(*self.threshold)
+        buf = np.random.randint(*self.buffer)
+        return self.crop_roi(img, thres, buf)
+
+
 class AutoFlip(ImageOnlyTransform):
 
     def __init__(self, sample_width=100, always_apply=True, p=1.0):

@@ -10,7 +10,9 @@ from general import *
 class PatientLevelDataset(D.Dataset):
     def __init__(
         self, df, image_dir, target_cols=['cancer'], metadata_cols=[], sep='/', 
-        preprocess=None, transforms=None, flip_lr=False, sample_num=1,
+        preprocess=None, transforms=None, flip_lr=False, 
+        # sampling strategy
+        sample_num=1, view_category= [['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']], replace=False, sample_criteria='high_value', 
         is_test=False, mixup_params=None, return_index=False):
 
         self.df = df
@@ -27,7 +29,10 @@ class PatientLevelDataset(D.Dataset):
         self.flip_lr = flip_lr # Sorry this option is no longer 
         self.is_test = is_test
         self.sample_num = sample_num
-        self.view_category = [['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']]
+        self.view_category = view_category
+        self.replace = replace
+        self.sample_criteria = sample_criteria
+        assert sample_criteria in ['high_value', 'low_value_for_implant']
         if mixup_params:
             assert 'alpha' in mixup_params.keys()
             self.mu = True
@@ -62,52 +67,52 @@ class PatientLevelDataset(D.Dataset):
         img = self._process_img(img)
         return img
 
-    def _load_best_image(self, df):
+    def _load_best_image(self, df): # for test
         scores = []
         images = []
+        iids = []
+        is_implant = df['implant'].values[0]
         for pid, iid in df[['patient_id', 'image_id']].values:
             img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
             img = cv2.imread(str(img_path))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            # img_xmean = img.mean(1)
-            # scores.append((img_xmean > np.percentile(img_xmean, 10)).mean())
             scores.append(img.mean())
-            # scores.append(img.std())
             images.append(img)
-        score_idx = np.argsort(scores)[::-1]
+            iids.append(iid)
+        if is_implant and self.sample_criteria == 'low_value_for_implant':
+            score_idx = np.argsort(scores)
+        else:
+            score_idx = np.argsort(scores)[::-1]
         output_imgs = [self._process_img(images[idx]) for idx in score_idx[:self.sample_num]]
-        return output_imgs
+        return output_imgs, [iids[idx] for idx in score_idx[:self.sample_num]]
 
     def _load_data(self, idx):
         pid = self.pids[idx]
         pdf = self.df_dict[pid]
-        view0 = pdf.loc[pdf['view'].isin(self.view_category[0])]
-        if len(view0) == 0:
-            img0 = []
-        else:
-            if self.is_test:
-                img0 = self._load_best_image(view0)
-            else:
-                view0 = view0.sample(min(self.sample_num, len(view0)))
+        img = []
+        img_ids = [] # replace?
+        for iv, view_cat in enumerate(self.view_category):
+            view0 = pdf.loc[pdf['view'].isin(view_cat) & ~pdf['image_id'].isin(img_ids)]
+            if not self.replace and len(view0) == 0:
+                view0 = pdf.loc[pdf['view'].isin(view_cat)]
+            if len(view0) == 0:
                 img0 = []
-                for pid, iid in view0[['patient_id', 'image_id']].values:
-                    img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
-                    img0.append(self._load_image(img_path))
-
-        view1 = pdf.loc[pdf['view'].isin(self.view_category[1])]
-        if len(view1) == 0:
-            img1 = []
-        else:
-            if self.is_test:
-                img1 = self._load_best_image(view1)
             else:
-                view1 = view1.sample(min(self.sample_num, len(view1)))
-                img1 = []
-                for pid, iid in view0[['patient_id', 'image_id']].values:
-                    img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
-                    img1.append(self._load_image(img_path))
+                if self.is_test:
+                    img0, iid = self._load_best_image(view0)
+                    if not self.replace:
+                        img_ids.extend(iid)
+                else:
+                    view0 = view0.sample(min(self.sample_num, len(view0)))
+                    img0 = []
+                    for pid, iid in view0[['patient_id', 'image_id']].values:
+                        img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
+                        img0.append(self._load_image(img_path))
+                        if not self.replace:
+                            img_ids.append(iid)
+            img.extend(img0)
         
-        img = torch.stack(img0+img1, dim=0)
+        img = torch.stack(img, dim=0)
         expected_dim = self.sample_num * len(self.view_category)
         if img.shape[0] < expected_dim:
             img = torch.concat(
