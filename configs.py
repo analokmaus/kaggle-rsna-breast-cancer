@@ -692,6 +692,19 @@ class Model04res0(Model04):
     monitor_metrics = [AUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True)]
 
 
+class Model04res0a(Model04res0):
+    name = 'model_04_res0a'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant'
+    )
+    weight_path = Path('results/model_04_res0')
+    num_epochs = 10
+    callbacks = [
+        EarlyStopping(patience=5, maximize=True, skip_epoch=0),
+        SaveSnapshot()
+    ]
+
+
 class Aug06(Baseline3):
     name = 'aug_06'
     transforms = dict(
@@ -858,6 +871,40 @@ class Model05v3arch0(Model05v3loss0):
         classification_model='convnext_small.fb_in22k_ft_in1k_384',
         pretrained=True,
         spatial_pool=False)
+
+
+class Model05v3ds0(Model05v3loss0):
+    name = 'model_05_v3_ds0'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant'
+    )
+
+
+class Model05v3aug2(Model05v3aug0):
+    name = 'model_05_v3_aug2'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant'
+    )
+
+
+class Model05v3aug3(Model05v3ds0):
+    name = 'model_05_v3_aug3'
+    preprocess = dict(
+        train=A.Compose([
+            AutoFlip(sample_width=200), 
+            RandomCropROI(threshold=(0.08, 0.12), buffer=(0, 120)), A.Resize(1024, 512)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)]),
+    )
+
+
+class Model05v3aug4(Model05v3ds0):
+    name = 'model_05_v3_aug4'
+    preprocess = dict(
+        train=A.Compose([
+            AutoFlip(sample_width=200), 
+            RandomCropROI(threshold=(0.08, 0.12), buffer=(-40, 80)), A.Resize(1024, 512)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=40), A.Resize(1024, 512)]),
+    )
 
 
 class Model05v4(Model05):
