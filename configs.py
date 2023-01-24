@@ -907,6 +907,56 @@ class Model05v3aug4(Model05v3ds0):
     )
 
 
+class Model05v3aug3arch0(Model05v3aug3):
+    name = 'model_05_v3_aug3_arch0'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=False, 
+        dropout=0.05)
+
+
+class Model05v3aug2arch0(Model05v3aug2):
+    name = 'model_05_v3_aug2_arch0'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=False, 
+        dropout=0.05)
+
+
+class Model05v3aug4arch0(Model05v3aug4):
+    name = 'model_05_v3_aug4_arch0'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=False,
+        dropout=0.05)
+
+
+class Model05v3aug5(Model05v3aug2arch0):
+    name = 'model_05_v3_aug5'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(rotate_limit=30),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.2),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=24, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ]), 
+    )
+    
+
 class Model05v4(Model05):
     name = 'model_05_v4'
     model_params = dict(
@@ -952,6 +1002,20 @@ class Res00(Model05v2):
         test=A.Compose([
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
         ]), 
+    )
+
+
+class Res00aug0(Res00):
+    name = 'res_00_aug0'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant'
+    )
+    preprocess = dict(
+        train=A.Compose([
+            AutoFlip(sample_width=200), 
+            RandomCropROI(threshold=(0.08, 0.12), buffer=(-20, 100)), 
+            A.Resize(1536, 768)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)]),
     )
 
 
