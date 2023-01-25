@@ -133,12 +133,14 @@ if __name__ == "__main__":
             is_test=True,
             **cfg.dataset_params)
         train_weights = train_data.get_labels().reshape(-1)
+        valid_weights = valid_data.get_labels().reshape(-1)
         train_weights[train_weights == 1] = (train_weights == 0).sum() / (train_weights == 1).sum()
         train_weights[train_weights == 0] = 1
         if cfg.sampler is not None:
             sampler = cfg.sampler(train_weights.tolist(), len(train_weights))
         else:
             sampler = None
+        LOGGER(f'train pos: {train_data.get_labels().reshape(-1).mean():.5f} / valid pos: {valid_weights.mean():.5f}')
 
         train_loader = D.DataLoader(
             train_data, batch_size=cfg.batch_size, 

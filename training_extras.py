@@ -59,7 +59,7 @@ class AuxLossTrain(SimpleHook):
         pass
 
     def forward_test(self, trainer, inputs):
-        approxs = trainer.model(*inputs[-1])
+        approxs = trainer.model(*inputs[:-1])
         return approxs[:, 0].view(-1, 1)
 
     def __repr__(self) -> str:
