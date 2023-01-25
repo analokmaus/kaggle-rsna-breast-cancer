@@ -11,7 +11,7 @@ class PatientLevelDataset(D.Dataset):
     def __init__(
         self, df, image_dir, target_cols=['cancer'], aux_target_cols=[], 
         metadata_cols=[], sep='/', 
-        preprocess=None, transforms=None, flip_lr=False, 
+        preprocess=None, transforms=None, flip_lr=False, ddsm=False,
         # sampling strategy
         sample_num=1, view_category= [['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']], replace=False, sample_criteria='high_value', 
         is_test=False, mixup_params=None, return_index=False):
@@ -29,6 +29,7 @@ class PatientLevelDataset(D.Dataset):
         self.preprocess = preprocess
         self.transforms = transforms
         self.flip_lr = flip_lr # Sorry this option is no longer 
+        self.ddsm = ddsm
         self.is_test = is_test
         self.sample_num = sample_num
         self.view_category = view_category
@@ -73,9 +74,15 @@ class PatientLevelDataset(D.Dataset):
         scores = []
         images = []
         iids = []
-        is_implant = df['implant'].values[0]
+        if self.ddsm:
+            is_implant = 0
+        else:
+            is_implant = df['implant'].values[0]
         for pid, iid in df[['patient_id', 'image_id']].values:
-            img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
+            if self.ddsm:
+                img_path = self.image_dir/f'ddsm_{iid}.png'
+            else:
+                img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
             img = cv2.imread(str(img_path))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             scores.append(img.mean())
@@ -108,7 +115,10 @@ class PatientLevelDataset(D.Dataset):
                     view0 = view0.sample(min(self.sample_num, len(view0)))
                     img0 = []
                     for pid, iid in view0[['patient_id', 'image_id']].values:
-                        img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
+                        if self.ddsm:
+                            img_path = self.image_dir/f'ddsm_{iid}.png'
+                        else:
+                            img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
                         img0.append(self._load_image(img_path))
                         if not self.replace:
                             img_ids.append(iid)

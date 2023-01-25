@@ -1111,6 +1111,19 @@ class Baseline4(Baseline): # Equivalent to Model05v3aug2, 4 fold cv
     ]
 
 
+class Baseline4ddsm(Baseline4):
+    name = 'pretrain_baseline4_ddsm'
+    dataset_params = dict(ddsm=True)
+    train_path = Path('input/rsna-breast-cancer-detection/ddsm/DDSM/ddsm_with_meta.csv')
+    image_dir = Path('input/rsna-breast-cancer-detection/ddsm/DDSM/ddsm_image_resized_2048V')
+    num_epochs = 10
+
+
+class Baseline4pr0(Baseline4):
+    name = 'baseline_4_pr0'
+    weight_path = Path('results/pretrain_baseline4_ddsm/nocv.pt')
+
+
 class AuxLoss00(Baseline4):
     name = 'aux_00'
     model_params = dict(

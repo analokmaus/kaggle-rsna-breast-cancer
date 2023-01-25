@@ -197,6 +197,7 @@ if __name__ == "__main__":
 
     if not (export_dir/f'nocv.pt').exists():
         LOGGER(f'nocv.pt missing. No target to predict.')
+    
     else:
 
         LOGGER(f'===== INFERENCE FOLD {fold} =====')
