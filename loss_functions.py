@@ -95,4 +95,27 @@ class MultiLevelLoss(nn.Module):
     
     def __repr__(self):
         return f'MultiLevel(weights={self.weights}, pos_weight={self.pos_weight})'
+
+
+class AuxLoss(nn.Module):
+    '''
+    '''
+    def __init__(self, loss_types=('bce', 'mse'), weights=(1., 1.)):
+        super().__init__()
+        loss_dict = {
+            'bce': binary_cross_entropy_with_logits,
+            'mse': F.mse_loss
+        }
+        self.loss_types = loss_types
+        self.weights = weights
+        self.loss_list = [loss_dict[l] for l in loss_types]
+    
+    def forward(self, inputs, targets):
+        loss = 0
+        for i, (f, w) in enumerate(zip(self.loss_list, self.weights)):
+            loss += w * f(inputs[:, i], targets[:, i])
+        return loss / sum(self.weights)
+    
+    def __repr__(self):
+        return f'AuxLoss(loss_types={self.loss_types}, weights={self.weights})'
     

@@ -37,6 +37,35 @@ class MixupTrain(SimpleHook):
         return f'MixUp(alpha={self.alpha}, hard_label={self.hard_label}, lor_label={self.lor_label})'
 
 
+class AuxLossTrain(SimpleHook):
+    '''
+    '''
+
+    def __init__(self, evaluate_in_batch=False):
+        super().__init__(evaluate_in_batch=evaluate_in_batch)
+    
+    def forward_train(self, trainer, inputs):
+        targets = inputs[-1]
+        approxs = trainer.model(*inputs[:-1])
+        loss = trainer.criterion(approxs, targets)
+        storage = trainer.epoch_storage
+        storage['approx'].append(approxs[:, 0].view(-1, 1).detach())
+        storage['target'].append(targets[:, 0].view(-1, 1).detach())
+        return loss, approxs[:, 0].view(-1, 1).detach()
+
+    forward_valid = forward_train
+
+    def evaluate_batch(self, trainer, inputs, approx):
+        pass
+
+    def forward_test(self, trainer, inputs):
+        approxs = trainer.model(*inputs[-1])
+        return approxs[:, 0].view(-1, 1)
+
+    def __repr__(self) -> str:
+        return f'AuxLossTrain()'
+
+
 class MultiLevelTrain(SimpleHook):
     '''
     '''

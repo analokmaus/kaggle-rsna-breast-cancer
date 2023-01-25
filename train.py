@@ -89,6 +89,8 @@ if __name__ == "__main__":
     seed_everything(cfg.seed, cfg.deterministic)
     print_config(cfg, LOGGER)
     train = pd.read_csv(cfg.train_path)
+    for col in ['age']:
+        train[col] = train[col].fillna(train[col].mean()) / 100.
     if opt.debug:
         train = train.iloc[:1000]
     splitter = cfg.splitter
@@ -141,10 +143,10 @@ if __name__ == "__main__":
         train_loader = D.DataLoader(
             train_data, batch_size=cfg.batch_size, 
             shuffle=True if cfg.sampler is None else False,
-            sampler=sampler, num_workers=opt.num_workers, pin_memory=False)
+            sampler=sampler, num_workers=opt.num_workers, pin_memory=True)
         valid_loader = D.DataLoader(
             valid_data, batch_size=cfg.batch_size, shuffle=False,
-            num_workers=opt.num_workers, pin_memory=False)
+            num_workers=opt.num_workers, pin_memory=True)
 
         model = cfg.model(**cfg.model_params)
 
@@ -232,7 +234,7 @@ if __name__ == "__main__":
             **cfg.dataset_params)
         valid_loader = D.DataLoader(
             valid_data, batch_size=cfg.batch_size, shuffle=False,
-            num_workers=opt.num_workers, pin_memory=False)
+            num_workers=opt.num_workers, pin_memory=True)
 
         model = cfg.model(**cfg.model_params)
         checkpoint = torch.load(export_dir/f'fold{fold}.pt', 'cpu')

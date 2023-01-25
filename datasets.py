@@ -9,7 +9,8 @@ from general import *
 
 class PatientLevelDataset(D.Dataset):
     def __init__(
-        self, df, image_dir, target_cols=['cancer'], metadata_cols=[], sep='/', 
+        self, df, image_dir, target_cols=['cancer'], aux_target_cols=[], 
+        metadata_cols=[], sep='/', 
         preprocess=None, transforms=None, flip_lr=False, 
         # sampling strategy
         sample_num=1, view_category= [['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']], replace=False, sample_criteria='high_value', 
@@ -23,6 +24,7 @@ class PatientLevelDataset(D.Dataset):
         self.pids = list(self.df_dict.keys())
         self.image_dir = image_dir
         self.target_cols = target_cols
+        self.aux_target_cols = aux_target_cols
         self.metadata_cols = metadata_cols
         self.preprocess = preprocess
         self.transforms = transforms
@@ -119,7 +121,7 @@ class PatientLevelDataset(D.Dataset):
                 [img, torch.zeros(
                     (expected_dim-img.shape[0], *img.shape[1:]), dtype=torch.float32)], dim=0)
 
-        label = torch.from_numpy(pdf[self.target_cols].values[0].astype(np.float16))
+        label = torch.from_numpy(pdf[self.target_cols+self.aux_target_cols].values[0].astype(np.float16))
         
         return img, label
 
