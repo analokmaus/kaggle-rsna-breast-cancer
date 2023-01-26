@@ -11,7 +11,7 @@ class PatientLevelDataset(D.Dataset):
     def __init__(
         self, df, image_dir, target_cols=['cancer'], aux_target_cols=[], 
         metadata_cols=[], sep='/', 
-        preprocess=None, transforms=None, flip_lr=False, ddsm=False,
+        preprocess=None, transforms=None, flip_lr=False,
         # sampling strategy
         sample_num=1, view_category= [['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']], replace=False, sample_criteria='high_value', 
         is_test=False, mixup_params=None, return_index=False):
@@ -28,8 +28,7 @@ class PatientLevelDataset(D.Dataset):
         self.metadata_cols = metadata_cols
         self.preprocess = preprocess
         self.transforms = transforms
-        self.flip_lr = flip_lr # Sorry this option is no longer 
-        self.ddsm = ddsm
+        self.flip_lr = flip_lr # Sorry this option is no longer
         self.is_test = is_test
         self.sample_num = sample_num
         self.view_category = view_category
@@ -70,19 +69,19 @@ class PatientLevelDataset(D.Dataset):
         img = self._process_img(img)
         return img
 
+    def _get_file_path(self, patient_id, image_id):
+        return self.image_dir/f'{patient_id}{self.sep}{image_id}.png'
+
     def _load_best_image(self, df): # for test
         scores = []
         images = []
         iids = []
-        if self.ddsm:
-            is_implant = 0
-        else:
+        if 'implant' in df.columns:
             is_implant = df['implant'].values[0]
+        else:
+            is_implant = 0
         for pid, iid in df[['patient_id', 'image_id']].values:
-            if self.ddsm:
-                img_path = self.image_dir/f'ddsm_{iid}.png'
-            else:
-                img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
+            img_path = self._get_file_path(pid, iid)
             img = cv2.imread(str(img_path))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             scores.append(img.mean())
@@ -115,10 +114,7 @@ class PatientLevelDataset(D.Dataset):
                     view0 = view0.sample(min(self.sample_num, len(view0)))
                     img0 = []
                     for pid, iid in view0[['patient_id', 'image_id']].values:
-                        if self.ddsm:
-                            img_path = self.image_dir/f'ddsm_{iid}.png'
-                        else:
-                            img_path = self.image_dir/f'{pid}{self.sep}{iid}.png'
+                        img_path = self._get_file_path(pid, iid)
                         img0.append(self._load_image(img_path))
                         if not self.replace:
                             img_ids.append(iid)
@@ -157,6 +153,15 @@ class PatientLevelDataset(D.Dataset):
             pdf = self.df_dict[pid]
             labels.append(pdf[self.target_cols].values[0].reshape(1, 1).astype(np.float16))
         return np.concatenate(labels, axis=0)
+
+
+class PatientLevelDatasetDDSM(PatientLevelDataset):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def _get_file_path(self, patient_id, image_id):
+        return self.image_dir/f'ddsm_{image_id}.png'
 
 
 class ImageLevelDataset(D.Dataset):

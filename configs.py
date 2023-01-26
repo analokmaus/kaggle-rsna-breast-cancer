@@ -1113,7 +1113,7 @@ class Baseline4(Baseline): # Equivalent to Model05v3aug2, 4 fold cv
 
 class Baseline4ddsm(Baseline4):
     name = 'pretrain_baseline4_ddsm'
-    dataset_params = dict(ddsm=True)
+    dataset = PatientLevelDatasetDDSM
     train_path = Path('input/rsna-breast-cancer-detection/ddsm/DDSM/ddsm_with_meta.csv')
     image_dir = Path('input/rsna-breast-cancer-detection/ddsm/DDSM/ddsm_image_resized_2048V')
     num_epochs = 10
@@ -1141,7 +1141,15 @@ class AuxLoss00(Baseline4):
 
 class AuxLoss01(AuxLoss00):
     name = 'aux_01'
-    criterion = AuxLoss(loss_types=('bce', 'mse'), weights=(2., 1.))
+    dataset_params = dict(
+        aux_target_cols=['biopsy']
+    )
+    criterion = AuxLoss(loss_types=('bce', 'bce'), weights=(1., 1.))
+
+
+class AuxLoss01v0(AuxLoss01):
+    name = 'aux_01_v0'
+    criterion = AuxLoss(loss_types=('bce', 'bce'), weights=(2., 1.))
 
 
 class AuxLoss02(AuxLoss00):
@@ -1156,6 +1164,39 @@ class AuxLoss02(AuxLoss00):
         aux_target_cols=['age', 'biopsy']
     )
     criterion = AuxLoss(loss_types=('bce', 'mse', 'bce'), weights=(2., 1., 1.))
+
+
+class AuxLoss02pr0(AuxLoss02):
+    name = 'aux_02_pr0'
+    weight_path = Path('results/pretrain_baseline4_ddsm/nocv.pt')
+    optimizer_params = dict(lr=8e-6, weight_decay=1e-6)
+
+
+class AuxLoss02v0(AuxLoss02):
+    name = 'aux_02_v0'
+    criterion = AuxLoss(loss_types=('bce', 'bce', 'bce'), weights=(2., 1., 1.))
+
+
+class AuxLoss03(AuxLoss00):
+    name = 'aux_03'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True,
+        num_classes=4)
+    target_cols = ['cancer']
+    dataset_params = dict(
+        aux_target_cols=['age', 'biopsy', 'invasive']
+    )
+    criterion = AuxLoss(loss_types=('bce', 'mse', 'bce', 'bce'), weights=(3., 1., 1., 1.))
+
+
+class AuxLoss04(AuxLoss00):
+    name = 'aux_04'
+    dataset_params = dict(
+        aux_target_cols=['machine_id']
+    )
+    criterion = AuxLoss(loss_types=('bce', 'bce'), weights=(2., 1.))
 
 
 class Dataset03(Baseline4):
