@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import random
 import cv2
 from albumentations.core.transforms_interface import ImageOnlyTransform, DualTransform
@@ -80,6 +81,7 @@ class CropROI(ImageOnlyTransform):
         self.threshold = threshold
         self.buffer = buffer
 
+    @classmethod
     def crop_roi(self, img, threshold=0.1, buffer=50):
         y_max, x_max = img.shape
         img2 = img > img.mean()
@@ -170,6 +172,79 @@ class RandomCropROI2(CropROI2):
         thres = np.random.randint(*self.threshold)
         buf = np.random.randint(*self.buffer)
         return self.crop_roi(img, thres, buf)
+
+
+
+class CropBBox(DualTransform):
+
+    def __init__(self, buffer=30, always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.buffer = buffer
+
+    def apply(
+        self, img: np.ndarray, x_min: int = 0, x_max: int = 0, y_min: int = 0, y_max: int = 0, **params
+    ) -> np.ndarray:
+        return img[y_min:y_max, x_min:x_max]
+
+    def get_params_dependent_on_targets(self, params):
+        img_y, img_x = params['image'].shape[:2]
+        bbox = params['bboxes'][0]
+        x_min = int(img_x*bbox[0]) - self.buffer
+        x_max = int(img_x*bbox[2]) + self.buffer
+        y_min = int(img_y*bbox[1]) - self.buffer
+        y_max = int(img_y*bbox[3]) + self.buffer
+        x_min = max(0, x_min)
+        y_min = max(0, y_min)
+        return {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+    
+    def apply_to_bbox(self, bbox, **params):
+        return bbox
+    
+    @property
+    def targets_as_params(self):
+        return ["image", "bboxes"]
+    
+    def get_transform_init_args_names(self):
+        return {'buffer': self.buffer}
+
+
+class RandomCropBBox(CropBBox):
+
+    def __init__(self, buffer=(0, 120), always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.buffer = buffer
+
+    def get_params_dependent_on_targets(self, params):
+        img_y, img_x = params['image'].shape[:2]
+        bbox = params['bboxes'][0]
+        buf = np.random.randint(*self.buffer)
+        x_min = int(img_x*bbox[0]) - buf
+        x_max = int(img_x*bbox[2]) + buf
+        y_min = int(img_y*bbox[1]) - buf
+        y_max = int(img_y*bbox[3]) + buf
+        x_min = max(0, x_min)
+        y_min = max(0, y_min)
+        return {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+    
+    def get_transform_init_args_names(self):
+        return {'buffer': self.buffer}
+
+
+class MixedCropBBox(RandomCropBBox):
+    
+    def __init__(self, buffer=(0, 120), bbox_p=0.5, always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.buffer = buffer
+        self.bbox_p = bbox_p
+    
+    def apply(self, img: np.ndarray, x_min, x_max, y_min, y_max, **params):
+        if np.random.random() < self.bbox_p:
+            return img[y_min:y_max, x_min:x_max]
+        else:
+            return RandomCropROI.crop_roi(img, threshold=0.1, buffer=np.random.randint(*self.buffer))
+
+    def get_transform_init_args_names(self):
+        return ('buffer', 'bbox_p')
 
 
 class AutoFlip(ImageOnlyTransform):

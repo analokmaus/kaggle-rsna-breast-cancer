@@ -1119,9 +1119,49 @@ class Baseline4ddsm(Baseline4):
     num_epochs = 10
 
 
+class Baseline4vindr(Baseline4):
+    name = 'pretrain_baseline4_vindr'
+    train_path = Path('input/rsna-breast-cancer-detection/vindr_train.csv')
+    image_dir = Path('input/rsna-breast-cancer-detection/vindr_mammo_resized_2048V')
+    num_epochs = 10
+
+
 class Baseline4pr0(Baseline4):
     name = 'baseline_4_pr0'
     weight_path = Path('results/pretrain_baseline4_ddsm/nocv.pt')
+
+
+class Baseline4pr1(Baseline4):
+    name = 'baseline_4_pr1'
+    weight_path = Path('results/pretrain_baseline4_vindr/nocv.pt')
+
+
+class Aug07(Baseline4):
+    name = 'aug_07'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant',
+        bbox_path='input/rsna-breast-cancer-detection/rsna-yolo-crop/001_baseline/det_result_001_baseline.csv',
+    )
+    preprocess = dict(
+        train=A.Compose([
+            RandomCropBBox(buffer=(-20, 100)), 
+            AutoFlip(sample_width=100), A.Resize(1024, 512)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
+
+
+class Aug08(Aug07):
+    name = 'aug_08'
+    preprocess = dict(
+        train=A.Compose([
+            MixedCropBBox(buffer=(-20, 100), bbox_p=0.5), 
+            AutoFlip(sample_width=100), A.Resize(1024, 512)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
 
 
 class AuxLoss00(Baseline4):

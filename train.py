@@ -93,7 +93,7 @@ if __name__ == "__main__":
         train[col] = train[col].fillna(train[col].mean()) / 100.
     if 'aux_target_cols' in cfg.dataset_params.keys():
         if 'machine_id' in cfg.dataset_params['aux_target_cols']:
-            train['machine_id'] = train['machine_id'].isin([93, 234, 386]).astype(float)
+            train['machine_id'] = train['machine_id'].isin([93, 210, 216]).astype(float)
     if opt.debug:
         train = train.iloc[:1000]
     splitter = cfg.splitter

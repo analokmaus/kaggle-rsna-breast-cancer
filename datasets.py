@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from pathlib import Path
 import torch
 import torch.utils.data as D
@@ -10,7 +11,7 @@ from general import *
 class PatientLevelDataset(D.Dataset):
     def __init__(
         self, df, image_dir, target_cols=['cancer'], aux_target_cols=[], 
-        metadata_cols=[], sep='/', 
+        metadata_cols=[], sep='/', bbox_path=None, 
         preprocess=None, transforms=None, flip_lr=False,
         # sampling strategy
         sample_num=1, view_category= [['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']], replace=False, sample_criteria='high_value', 
@@ -26,6 +27,10 @@ class PatientLevelDataset(D.Dataset):
         self.target_cols = target_cols
         self.aux_target_cols = aux_target_cols
         self.metadata_cols = metadata_cols
+        if bbox_path is None:
+            self.bbox = None
+        else:
+            self.bbox = pd.read_csv(bbox_path).set_index('name').to_dict(orient='index')
         self.preprocess = preprocess
         self.transforms = transforms
         self.flip_lr = flip_lr # Sorry this option is no longer
@@ -47,9 +52,15 @@ class PatientLevelDataset(D.Dataset):
     def __len__(self):
         return len(self.df_dict) # num_patients
 
-    def _process_img(self, img):
+    def _process_img(self, img, bbox=None):
         if self.preprocess:
-            img = self.preprocess(image=img)['image']
+            if bbox is None:
+                img = self.preprocess(image=img)['image']
+            else:
+                img_h, img_w = img.shape
+                bbox[2] = min(bbox[2], img_h)
+                bbox[3] = min(bbox[3], img_w)
+                img = self.preprocess(image=img, bboxes=[bbox])['image']
 
         if self.transforms:
             if len(img.shape) == 4: # Tile x W x H x Ch
@@ -63,10 +74,10 @@ class PatientLevelDataset(D.Dataset):
         
         return img
 
-    def _load_image(self, path):
+    def _load_image(self, path, bbox=None):
         img = cv2.imread(str(path))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        img = self._process_img(img)
+        img = self._process_img(img, bbox=bbox)
         return img
 
     def _get_file_path(self, patient_id, image_id):
@@ -75,6 +86,7 @@ class PatientLevelDataset(D.Dataset):
     def _load_best_image(self, df): # for test
         scores = []
         images = []
+        bboxes = []
         iids = []
         if 'implant' in df.columns:
             is_implant = df['implant'].values[0]
@@ -84,6 +96,12 @@ class PatientLevelDataset(D.Dataset):
             img_path = self._get_file_path(pid, iid)
             img = cv2.imread(str(img_path))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            if self.bbox is not None:
+                bbox = self.bbox[f'{pid}/{iid}.png']
+                bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
+            else:
+                bbox = None
+            bboxes.append(bbox)
             scores.append(img.mean())
             images.append(img)
             iids.append(iid)
@@ -91,7 +109,8 @@ class PatientLevelDataset(D.Dataset):
             score_idx = np.argsort(scores)
         else:
             score_idx = np.argsort(scores)[::-1]
-        output_imgs = [self._process_img(images[idx]) for idx in score_idx[:self.sample_num]]
+        # print(f'{pid}/{[iids[idx] for idx in score_idx[:self.sample_num]][0]}.png')
+        output_imgs = [self._process_img(images[idx], bboxes[idx]) for idx in score_idx[:self.sample_num]]
         return output_imgs, [iids[idx] for idx in score_idx[:self.sample_num]]
 
     def _load_data(self, idx):
@@ -115,7 +134,12 @@ class PatientLevelDataset(D.Dataset):
                     img0 = []
                     for pid, iid in view0[['patient_id', 'image_id']].values:
                         img_path = self._get_file_path(pid, iid)
-                        img0.append(self._load_image(img_path))
+                        if self.bbox is not None:
+                            bbox = self.bbox[f'{pid}/{iid}.png']
+                            bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
+                        else:
+                            bbox = None
+                        img0.append(self._load_image(img_path, bbox))
                         if not self.replace:
                             img_ids.append(iid)
             img.extend(img0)
