@@ -31,6 +31,7 @@ class Baseline:
     name = 'baseline'
     seed = 2022
     train_path = DATA_DIR/'train.csv'
+    addon_train_path = None
     image_dir = Path('input/rsna-breast-cancer-detection/image_resized_1024')
     cv = 5
     splitter = StratifiedGroupKFold(n_splits=cv, shuffle=True, random_state=seed)
@@ -1242,6 +1243,16 @@ class AuxLoss04(AuxLoss00):
 class Dataset03(Baseline4):
     name = 'dataset_03'
     group_col = 'machine_id'
+
+
+class Dataset04(Baseline4):
+    name = 'dataset_04'
+    train_path = DATA_DIR/'train_concat_vindr_birads05.csv'
+
+
+class Dataset05(Baseline4):
+    name = 'dataset_05'
+    addon_train_path = DATA_DIR/'vindr_train_birads05.csv'
     
 
 class Res02(Baseline4):

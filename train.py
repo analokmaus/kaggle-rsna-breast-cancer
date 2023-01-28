@@ -135,6 +135,9 @@ if __name__ == "__main__":
             transforms=cfg.transforms['test'],
             is_test=True,
             **cfg.dataset_params)
+        if cfg.addon_train_path is not None:
+            addon_train = pd.read_csv(cfg.addon_train_path)
+            train_data.update_df(addon_train)
         train_weights = train_data.get_labels().reshape(-1)
         valid_weights = valid_data.get_labels().reshape(-1)
         train_weights[train_weights == 1] = (train_weights == 0).sum() / (train_weights == 1).sum()
@@ -143,6 +146,7 @@ if __name__ == "__main__":
             sampler = cfg.sampler(train_weights.tolist(), len(train_weights))
         else:
             sampler = None
+        LOGGER(f'train count: {len(train_data)} / valid count: {len(valid_data)}')
         LOGGER(f'train pos: {train_data.get_labels().reshape(-1).mean():.5f} / valid pos: {valid_weights.mean():.5f}')
 
         train_loader = D.DataLoader(

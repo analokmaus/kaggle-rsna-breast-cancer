@@ -49,6 +49,14 @@ class PatientLevelDataset(D.Dataset):
         self.rt_idx = return_index
         self.sep = sep
 
+    def update_df(self, new_df):
+        self.df = pd.concat([self.df, new_df])
+        if 'oversample_id' in self.df.columns:
+            self.df_dict = {pid: pdf for pid, pdf in self.df.groupby(['oversample_id', 'patient_id', 'laterality'])}
+        else:
+            self.df_dict = {pid: pdf for pid, pdf in self.df.groupby(['patient_id', 'laterality'])}
+        self.pids = list(self.df_dict.keys())
+
     def __len__(self):
         return len(self.df_dict) # num_patients
 
@@ -97,8 +105,12 @@ class PatientLevelDataset(D.Dataset):
             img = cv2.imread(str(img_path))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             if self.bbox is not None:
-                bbox = self.bbox[f'{pid}/{iid}.png']
-                bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
+                key = f'{pid}/{iid}.png'
+                if key in self.bbox.keys():
+                    bbox = self.bbox[key]
+                    bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
+                else:
+                    bbox = [0, 0, 100000, 100000, 'YOLO'] # dummy
             else:
                 bbox = None
             bboxes.append(bbox)
@@ -135,8 +147,12 @@ class PatientLevelDataset(D.Dataset):
                     for pid, iid in view0[['patient_id', 'image_id']].values:
                         img_path = self._get_file_path(pid, iid)
                         if self.bbox is not None:
-                            bbox = self.bbox[f'{pid}/{iid}.png']
-                            bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
+                            key = f'{pid}/{iid}.png'
+                            if key in self.bbox.keys():
+                                bbox = self.bbox[key]
+                                bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
+                            else:
+                                bbox = [0, 0, 100000, 100000, 'YOLO'] # dummy
                         else:
                             bbox = None
                         img0.append(self._load_image(img_path, bbox))
