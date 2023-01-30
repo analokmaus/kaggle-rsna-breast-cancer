@@ -7,3 +7,6 @@
 [submodule "iterative-stratification"]
 	path = iterative-stratification
 	url = https://github.com/trent-b/iterative-stratification.git
+[submodule "segmentation_models.pytorch"]
+	path = segmentation_models.pytorch
+	url = https://github.com/qubvel/segmentation_models.pytorch.git

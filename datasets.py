@@ -280,3 +280,59 @@ class ImageLevelDataset(D.Dataset):
 
     def get_labels(self):
         return self.df[self.target_cols].values
+
+
+class SegmentationDataset(D.Dataset):
+
+    def __init__(
+        self, df, image_dir, target_cols=['finding_birads'], sep='/', 
+        preprocess=None, transforms=None, is_test=False, return_index=False):
+        super().__init__()
+        self.df = df
+        self.df_dict = {pid: pdf for pid, pdf in df.groupby(['patient_id', 'image_id'])}
+        self.pids = list(self.df_dict.keys())
+        self.image_dir = image_dir
+        self.target_cols = target_cols
+        self.preprocess = preprocess
+        self.transforms = transforms
+        self.is_test = is_test
+        self.rt_idx = return_index
+        self.sep = sep
+
+    def _load_data(self, idx):
+        pid = self.pids[idx]
+        pdf = self.df_dict[pid]
+        path = self.image_dir/f'{pid[0]}{self.sep}{pid[1]}.png'
+        img = cv2.imread(str(path))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        mask = np.zeros((img.shape[0], img.shape[1], 3), dtype=np.float32)
+        img_h0, img_w0 = pdf[['height', 'width']].values[0]
+        img_h1, img_w1 = img.shape
+        for target, xmin, ymin, xmax, ymax in pdf.dropna(
+            subset=self.target_cols)[self.target_cols+['xmin', 'ymin', 'xmax', 'ymax']].values:
+            target_ch = int(target[-1]) - 3
+            mask[int(img_h1*(ymin/img_h0)):int(img_h1*(ymax/img_h0)), \
+                int(img_w1*(xmin/img_w0)):int(img_w1*(xmax/img_w0)), target_ch] = 1.0
+
+        if self.preprocess:
+            transformed = self.preprocess(image=img, mask=mask)
+            img = transformed['image']
+            mask = transformed['mask']
+
+        if self.transforms:
+            transformed = self.transforms(image=img, mask=mask)
+            img = transformed['image']
+            mask = transformed['mask']
+
+        return img, mask
+    
+    def __getitem__(self, idx):
+        pdf = self.df.iloc[idx]
+        img, mask = self._load_data(idx)
+        output = [img, mask]
+        if self.rt_idx:
+            output.append(idx)
+        return tuple(output)
+
+    def __len__(self):
+        return len(self.df_dict)

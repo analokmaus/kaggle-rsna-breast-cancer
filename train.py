@@ -222,6 +222,7 @@ if __name__ == "__main__":
     Prediction and calibration
     '''
     outoffolds = []
+    oof_targets = []
     selfpreditions = np.full((cfg.cv, len(train), 1), 0, dtype=np.float32)
     eval_metric = Pfbeta(binarize=True, return_thres=True)
     thresholds = []
@@ -281,6 +282,7 @@ if __name__ == "__main__":
             LOGGER(f'Monitor metric {im}: {metric_f(torch.from_numpy(pred_logits), target_fold):.5f}')
         scores.append(eval_score_fold)
         outoffolds.append(pred_logits)
+        oof_targets.append(target_fold.numpy())
         thresholds.append(thres)
         torch.cuda.empty_cache()
     
@@ -288,6 +290,7 @@ if __name__ == "__main__":
         pickle.dump({
             'folds': fold_iter,
             'outoffolds': outoffolds, 
+            'targets': oof_targets,
             'thresholds': thresholds
         }, f)
 

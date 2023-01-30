@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import segmentation_models_pytorch as smp
 from kuma_utils.metrics import MetricTemplate
 
 
@@ -70,3 +71,14 @@ class Pfbeta(nn.Module):
         else:
             return self.pfbeta(target, approx)
 
+
+class IoU(nn.Module):
+
+    def __init__(self, threshold=0.5):
+        super().__init__()
+        self.threshold = threshold
+
+    def forward(self, approx, target):
+        tp, fp, fn, tn = smp.metrics.get_stats(approx.sigmoid(), target.round().long(), mode='multilabel', threshold=0.5)
+        return smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
+    

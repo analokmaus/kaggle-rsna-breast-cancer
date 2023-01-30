@@ -74,23 +74,27 @@ class ImageToTile(ImageOnlyTransform):
     
 
 
-class CropROI(ImageOnlyTransform):
+class CropROI(DualTransform):
 
     def __init__(self, threshold=0.1, buffer=30, always_apply=True, p=1.0):
         super().__init__(always_apply, p)
         self.threshold = threshold
         self.buffer = buffer
 
-    @classmethod
-    def crop_roi(self, img, threshold=0.1, buffer=50):
+    def get_buffer_thres(self):
+        return self.buffer, self.threshold
+
+    def get_params_dependent_on_targets(self, params):
+        img = params['image']
+        buffer, threshold = self.get_buffer_thres()
         y_max, x_max = img.shape
         img2 = img > img.mean()
         y_mean = img2.mean(0)
         x_mean = img2.mean(1)
-        x_mean[:buffer] = 0
-        x_mean[-buffer:] = 0
-        y_mean[:buffer] = 0
-        y_mean[-buffer:] = 0
+        x_mean[:5] = 0
+        x_mean[-5:] = 0
+        y_mean[:5] = 0
+        y_mean[-5:] = 0
         y_mean = (y_mean - y_mean.min() + 1e-4) / (y_mean.max() - y_mean.min() + 1e-4)
         x_mean = (x_mean - x_mean.min() + 1e-4) / (x_mean.max() - x_mean.min() + 1e-4)
         y_slice = np.where(y_mean > threshold)[0]
@@ -103,40 +107,93 @@ class CropROI(ImageOnlyTransform):
             y_start, y_end = 0, y_max
         else:
             y_start, y_end = max(y_slice.min() - buffer, 0), min(y_slice.max() + buffer, y_max)
-        return img[x_start:x_end, y_start:y_end]
+        return {"x_min": y_start, "x_max": y_end, "y_min": x_start, "y_max": x_end}
 
-    def apply(self, img, **params):
-        return self.crop_roi(img, self.threshold, self.buffer)
+    def apply(self, img, x_min=0, y_min=0, x_max=0, y_max=0, **params):
+        return img[y_min:y_max, x_min:x_max]
+
+    def apply_to_mask(self, mask, x_min=0, y_min=0, x_max=0, y_max=0, **params):
+        return mask[y_min:y_max, x_min:x_max, :]
+
+    def apply_to_bbox(self, bbox, x_min=0, y_min=0, x_max=0, y_max=0, **params): # TODO
+        return bbox
+    
+    @property
+    def targets_as_params(self):
+        return ["image"]
     
     def get_transform_init_args_names(self):
         return ('threshold', 'buffer')
 
 
-class RandomCropROI(CropROI):
+class RandomCropROI(DualTransform):
 
-    def __init__(self, threshold=(0.8, 1.2), buffer=(0, 160), always_apply=True, p=1.0):
+    def __init__(self, threshold=(0.08, 0.12), buffer=(0, 160), always_apply=True, p=1.0):
         super().__init__(always_apply, p)
         self.threshold = threshold
         self.buffer = buffer
 
-    def apply(self, img, **params):
+    def get_buffer_thres(self):
         thres = np.random.uniform(*self.threshold)
         buf = np.random.randint(*self.buffer)
-        return self.crop_roi(img, thres, buf)
+        return buf, thres
+
+    def get_params_dependent_on_targets(self, params):
+        img = params['image']
+        buffer, threshold = self.get_buffer_thres()
+        y_max, x_max = img.shape
+        img2 = img > img.mean()
+        y_mean = img2.mean(0)
+        x_mean = img2.mean(1)
+        x_mean[:5] = 0
+        x_mean[-5:] = 0
+        y_mean[:5] = 0
+        y_mean[-5:] = 0
+        y_mean = (y_mean - y_mean.min() + 1e-4) / (y_mean.max() - y_mean.min() + 1e-4)
+        x_mean = (x_mean - x_mean.min() + 1e-4) / (x_mean.max() - x_mean.min() + 1e-4)
+        y_slice = np.where(y_mean > threshold)[0]
+        x_slice = np.where(x_mean > threshold)[0]
+        if len(x_slice) == 0:
+            x_start, x_end = 0, x_max
+        else:
+            x_start, x_end = max(x_slice.min() - buffer, 0), min(x_slice.max() + buffer, x_max)
+        if len(y_slice) == 0:
+            y_start, y_end = 0, y_max
+        else:
+            y_start, y_end = max(y_slice.min() - buffer, 0), min(y_slice.max() + buffer, y_max)
+        return {"x_min": y_start, "x_max": y_end, "y_min": x_start, "y_max": x_end}
+
+    def apply(self, img, x_min=0, y_min=0, x_max=0, y_max=0, **params):
+        return img[y_min:y_max, x_min:x_max]
+
+    def apply_to_mask(self, mask, x_min=0, y_min=0, x_max=0, y_max=0, **params):
+        return mask[y_min:y_max, x_min:x_max, :]
+
+    def apply_to_bbox(self, bbox, x_min=0, y_min=0, x_max=0, y_max=0, **params): # TODO
+        return bbox
+    
+    @property
+    def targets_as_params(self):
+        return ["image"]
+    
+    def get_transform_init_args_names(self):
+        return ('threshold', 'buffer')
 
 
-class CropROI2(ImageOnlyTransform):
+class CropROI2(CropROI):
 
     def __init__(self, threshold=20, buffer=30, always_apply=True, p=1.0):
         super().__init__(always_apply, p)
         self.threshold = threshold
         self.buffer = buffer
 
-    def crop_roi(self, X, threshold=20, buffer=50):
+    def get_params_dependent_on_targets(self, params):
         '''
         https://www.kaggle.com/code/vslaykovsky/rsna-cut-off-empty-space-from-images
         '''
+        X = params['image']
         ymax, xmax = X.shape
+        buffer, threshold = self.get_buffer_thres()
         X = X[10:-10, 10:-10]
         # regions of non-empty pixels
         output= cv2.connectedComponentsWithStats((X > threshold).astype(np.uint8)[:, :, None], 8, cv2.CV_32S)
@@ -152,10 +209,7 @@ class CropROI2(ImageOnlyTransform):
         x2 = min(xmax-10, x2+buffer)
         y1 = max(10, y1-buffer)
         y2 = min(ymax-10, y2+buffer)
-        return  X[y1:y2, x1:x2]
-
-    def apply(self, img, **params):
-        return self.crop_roi(img, self.threshold, self.buffer)
+        return {"x_min": x1, "x_max": x2, "y_min": y1, "y_max": y2}
     
     def get_transform_init_args_names(self):
         return ('threshold', 'buffer')
@@ -168,11 +222,10 @@ class RandomCropROI2(CropROI2):
         self.threshold = threshold
         self.buffer = buffer
 
-    def apply(self, img, **params):
+    def get_buffer_thres(self):
         thres = np.random.randint(*self.threshold)
         buf = np.random.randint(*self.buffer)
-        return self.crop_roi(img, thres, buf)
-
+        return buf, thres
 
 
 class CropBBox(DualTransform):
@@ -208,7 +261,7 @@ class CropBBox(DualTransform):
         return {'buffer': self.buffer}
 
 
-class RandomCropBBox(CropBBox):
+class RandomCropBBox(DualTransform):
 
     def __init__(self, buffer=(0, 120), always_apply=True, p=1.0):
         super().__init__(always_apply, p)
@@ -225,38 +278,53 @@ class RandomCropBBox(CropBBox):
         x_min = max(0, x_min)
         y_min = max(0, y_min)
         return {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+
+    def apply(
+        self, img: np.ndarray, x_min: int = 0, x_max: int = 0, y_min: int = 0, y_max: int = 0, **params
+    ) -> np.ndarray:
+        return img[y_min:y_max, x_min:x_max]
+    
+    def apply_to_bbox(self, bbox, **params):
+        return bbox
+    
+    @property
+    def targets_as_params(self):
+        return ["image", "bboxes"]
     
     def get_transform_init_args_names(self):
         return {'buffer': self.buffer}
 
 
-class MixedCropBBox(RandomCropBBox):
-    
-    def __init__(self, buffer=(0, 120), bbox_p=0.5, always_apply=True, p=1.0):
-        super().__init__(always_apply, p)
-        self.buffer = buffer
-        self.bbox_p = bbox_p
-    
-    def apply(self, img: np.ndarray, x_min, x_max, y_min, y_max, **params):
-        if np.random.random() < self.bbox_p:
-            return img[y_min:y_max, x_min:x_max]
-        else:
-            return RandomCropROI.crop_roi(img, threshold=0.1, buffer=np.random.randint(*self.buffer))
-
-    def get_transform_init_args_names(self):
-        return ('buffer', 'bbox_p')
-
-
-class AutoFlip(ImageOnlyTransform):
+class AutoFlip(DualTransform):
 
     def __init__(self, sample_width=100, always_apply=True, p=1.0):
         super().__init__(always_apply, p)
         self.sample_width = sample_width
-
-    def apply(self, img, **params):
+    
+    def get_params_dependent_on_targets(self, params):
+        img = params['image']
         if img[:, :self.sample_width].sum() <= img[:, -self.sample_width:].sum():
+            flip = True
+        else:
+            flip = False
+        return {"flip": flip}
+
+    def apply(self, img, flip=False, **params):
+        if flip:
             img = img[:, ::-1]
         return img
+
+    def apply_to_mask(self, mask, flip=False, **params):
+        if flip:
+            mask = mask[:, ::-1, :]
+        return mask
+
+    def apply_to_bbox(self, bbox, flip=False, **params):
+        return bbox
+    
+    @property
+    def targets_as_params(self):
+        return ["image"]
     
     def get_transform_init_args_names(self):
         return ('sample_width', 'sample_width')

@@ -1157,7 +1157,27 @@ class Aug08(Aug07):
     name = 'aug_08'
     preprocess = dict(
         train=A.Compose([
-            MixedCropBBox(buffer=(-20, 100), bbox_p=0.5), 
+            A.OneOf([
+                RandomCropBBox(buffer=(-20, 100), always_apply=False, p=0.5),
+                RandomCropROI(threshold=(0.08, 0.12), buffer=(-20, 100), always_apply=False, p=0.5)], 
+                p=1.0
+            ),
+            AutoFlip(sample_width=100), A.Resize(1024, 512)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
+
+
+class Aug09(Aug07):
+    name = 'aug_09'
+    preprocess = dict(
+        train=A.Compose([
+            A.OneOf([
+                RandomCropBBox(buffer=(-20, 100), always_apply=False, p=0.75),
+                RandomCropROI(threshold=(0.08, 0.12), buffer=(-20, 100), always_apply=False, p=0.25)], 
+                p=1.0
+            ),
             AutoFlip(sample_width=100), A.Resize(1024, 512)], 
             bbox_params=A.BboxParams(format='pascal_voc')),
         test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
