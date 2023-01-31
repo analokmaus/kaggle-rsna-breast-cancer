@@ -317,3 +317,48 @@ class MultiLevelModel(nn.Module):
         y_local = self.local_head(local_features)
         y_concat = self.concat_head(concat_features)
         return y_concat, y_global, y_local
+
+
+class SegAssistModel(nn.Module):
+    def __init__(self,
+                 classification_model='resnet18',
+                 classification_params={},
+                 in_chans=1,
+                 map_channel=3,
+                 num_classes=1,
+                 dropout=0,
+                 pretrained=False,
+                 seg_only=False):
+
+        super().__init__()
+
+        self.encoder = timm.create_model(
+            classification_model,
+            pretrained=pretrained,
+            in_chans=in_chans,
+            num_classes=num_classes,
+            **classification_params
+        )
+        feature_dim = self.encoder.get_classifier().in_features
+        self.encoder.reset_classifier(0, '')
+        self.localizer = nn.Conv2d(feature_dim, map_channel, (1, 1), bias=False)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.head = nn.Sequential(
+            Flatten(),
+            nn.Linear(feature_dim, 512), 
+            nn.ReLU(inplace=True), 
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(512, num_classes))
+        self.seg_only = seg_only
+
+    def forward(self, x):
+        output = self.encoder(x)
+        seg_map = self.localizer(output)
+        if self.seg_only:
+            return seg_map.sigmoid()
+        else:
+            output = self.global_pool(output)
+            output = self.head(output)
+            return output, seg_map.sigmoid()
+        

@@ -119,3 +119,23 @@ class AuxLoss(nn.Module):
     def __repr__(self):
         return f'AuxLoss(loss_types={self.loss_types}, weights={self.weights})'
     
+
+class ResizedSegLoss(nn.Module):
+
+    def __init__(self, loss_type='mse'):
+        super().__init__()
+        loss_dict = {
+            'bce': binary_cross_entropy_with_logits,
+            'mse': F.mse_loss
+        }
+        self.loss = loss_dict[loss_type]
+        self.loss_type = loss_type
+
+    def forward(self, inputs, targets):
+        if inputs.shape[2:] != targets.shape[2:]:
+            targets = F.interpolate(targets, scale_factor=inputs.shape[2]/targets.shape[2], mode="nearest")
+        return self.loss(inputs, targets)
+    
+    def __repr__(self):
+        return f'ResizedMSE(loss_type={self.loss_type})'
+    

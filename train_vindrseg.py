@@ -141,13 +141,16 @@ if __name__ == "__main__":
             model.load_state_dict(weight, strict=False)
             del weight; gc.collect()
 
-        optimizer = cfg.optimizer(
-            [
-                {"params": model.encoder.parameters(), "lr": cfg.encoder_lr},
-                {"params": model.decoder.parameters()},
-                {"params": model.segmentation_head.parameters()},
-            ], 
-            **cfg.optimizer_params)
+        if cfg.encoder_lr is not None:
+            optimizer = cfg.optimizer(
+                [
+                    {"params": model.encoder.parameters(), "lr": cfg.encoder_lr},
+                    {"params": model.decoder.parameters()},
+                    {"params": model.segmentation_head.parameters()},
+                ], 
+                **cfg.optimizer_params)
+        else:
+            optimizer = cfg.optimizer(model.parameters(), **cfg.optimizer_params)
         scheduler = cfg.scheduler(optimizer, **cfg.scheduler_params)
         FIT_PARAMS = {
             'loader': train_loader,

@@ -1287,6 +1287,10 @@ class Res02(Baseline4):
             A.Resize(1536, 768)]),
         test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)]),
     )
+    model_params = dict(
+        classification_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True)
     transforms = dict(
         train=A.Compose([
             A.ShiftScaleRotate(rotate_limit=30),
@@ -1296,7 +1300,7 @@ class Res02(Baseline4):
             A.OneOf([
                 A.GridDistortion(),
                 A.OpticalDistortion(),
-            ], p=0.1),
+            ], p=0.2),
             A.Normalize(mean=0.485, std=0.229, always_apply=True), 
             A.CoarseDropout(max_holes=16, max_height=96, max_width=96, p=0.2),
             ToTensorV2()
@@ -1305,3 +1309,20 @@ class Res02(Baseline4):
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
         ]), 
     )
+
+
+class Res02Aux0(Res02):
+    name ='res_02_aux0'
+    model_params = dict(
+        classification_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True,
+        num_classes=3)
+    target_cols = ['cancer']
+    dataset_params = dict(
+        aux_target_cols=['age', 'biopsy']
+    )
+    criterion = AuxLoss(loss_types=('bce', 'mse', 'bce'), weights=(2., 1., 1.))
+    hook = AuxLossTrain()
+
+    

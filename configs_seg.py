@@ -161,10 +161,10 @@ class SegBaseline(Baseline4):
             A.VerticalFlip(p=0.5),
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
-            # A.OneOf([
-            #     A.GridDistortion(),
-            #     A.OpticalDistortion(),
-            # ], p=0.1),
+            A.OneOf([
+                A.GridDistortion(),
+                A.OpticalDistortion(),
+            ], p=0.1),
             A.Normalize(mean=0.485, std=0.229, always_apply=True), 
             # A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.2),
             ToTensorV2(transpose_mask=True)
@@ -179,3 +179,21 @@ class SegBaseline(Baseline4):
     encoder_lr = 2e-4
     optimizer_params = dict(lr=2e-4, weight_decay=1e-6)
     hook = TrainHook(evaluate_in_batch=True)
+
+
+class SegBaseline2(SegBaseline):
+    name = 'seg_baseline_2'
+    model = SegAssistModel
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        seg_only=True
+    )
+    criterion = ResizedSegLoss('bce')
+    eval_metric = ResizedSegLoss('mse')
+    encoder_lr = None
+    optimizer_params = dict(lr=2e-5, weight_decay=1e-6)
+    callbacks = [
+        EarlyStopping(patience=5, maximize=False, skip_epoch=0),
+        SaveSnapshot()
+    ]
