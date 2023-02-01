@@ -152,6 +152,36 @@ class SingleImageAggregatedTrain(SimpleHook):
         return f'SingleImageAggregatedTrain()'
 
 
+class LRTrain(SimpleHook):
+    '''
+    '''
+
+    def __init__(self, evaluate_in_batch=False):
+        super().__init__(evaluate_in_batch=evaluate_in_batch)
+
+    def evaluate_batch(self, trainer, inputs, approx):
+        pass
+
+    def forward_train(self, trainer, inputs):
+        inputs, target = inputs
+        target = target.view(-1, 1)
+        approx = trainer.model(inputs)
+        loss = trainer.criterion(approx, target)
+        storage = trainer.epoch_storage
+        storage['approx'].append(approx.detach())
+        storage['target'].append(target)
+        return loss, approx.detach()
+
+    forward_valid = forward_train
+
+    def forward_test(self, trainer, inputs):
+        approx = trainer.model(inputs[0]) 
+        return approx # (l, r, l, r, ...)
+
+    def __repr__(self) -> str:
+        return f'LRTrain()'
+
+
 class StepDataset(CallbackTemplate):
 
     def __init__(self):

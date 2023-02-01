@@ -6,6 +6,7 @@ import torch.utils.data as D
 import cv2
 
 from general import *
+from transforms import AutoFlip
 
 
 class PatientLevelDataset(D.Dataset):
@@ -336,3 +337,184 @@ class SegmentationDataset(D.Dataset):
 
     def __len__(self):
         return len(self.df_dict)
+
+
+class PatientLevelDatasetLR(D.Dataset):
+    '''
+    Output: LRLRLR images, target
+    '''
+    def __init__(
+        self, df, image_dir, target_cols=['cancer'], aux_target_cols=[], 
+        metadata_cols=[], sep='/', bbox_path=None, 
+        preprocess=None, transforms=None, flip_lr=False, 
+        img_size=2048, transform_imagewise=False, separate_channel=True,
+        # sampling strategy
+        view_category= [['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']], sample_criteria='high_value', 
+        is_test=False, return_index=False):
+
+        self.df = df
+        if 'oversample_id' in df.columns:
+            self.df_dict = {pid: pdf for pid, pdf in df.groupby(['oversample_id', 'patient_id'])}
+        else:
+            self.df_dict = {pid: pdf for pid, pdf in df.groupby('patient_id')}
+        self.pids = list(self.df_dict.keys())
+        self.image_dir = image_dir
+        self.target_cols = target_cols
+        self.aux_target_cols = aux_target_cols
+        self.metadata_cols = metadata_cols
+        if bbox_path is None:
+            self.bbox = None
+        else:
+            self.bbox = pd.read_csv(bbox_path).set_index('name').to_dict(orient='index')
+        self.preprocess = preprocess
+        self.transforms = transforms
+        self.img_size = img_size
+        self.transform_imagewise = transform_imagewise
+        self.separate_channel = separate_channel
+        self.flip_lr = flip_lr
+        self.flip_t = AutoFlip(200)
+        self.is_test = is_test
+        self.view_category = view_category
+        self.sample_criteria = sample_criteria
+        assert sample_criteria in ['high_value', 'low_value_for_implant']
+        self.rt_idx = return_index
+        self.sep = sep
+
+    def update_df(self, new_df):
+        self.df = pd.concat([self.df, new_df])
+        if 'oversample_id' in self.df.columns:
+            self.df_dict = {pid: pdf for pid, pdf in self.df.groupby(['oversample_id', 'patient_id'])}
+        else:
+            self.df_dict = {pid: pdf for pid, pdf in self.df.groupby('patient_id')}
+        self.pids = list(self.df_dict.keys())
+
+    def __len__(self):
+        return len(self.df_dict) # num_patients
+
+    def _process_img(self, img, bbox=None):
+        if self.preprocess:
+            if bbox is None:
+                img = self.preprocess(image=img)['image']
+            else:
+                img_h, img_w = img.shape
+                bbox[2] = min(bbox[2], img_h)
+                bbox[3] = min(bbox[3], img_w)
+                img = self.preprocess(image=img, bboxes=[bbox])['image']
+
+        if self.transforms:
+            img = self.transforms(image=img)['image']
+        
+        return img
+
+    def _load_image(self, path):
+        img = cv2.imread(str(path))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        if self.flip_lr:
+            img = self.flip_t(image=img)['image']
+        return img[:, :, None]
+        
+    def _get_file_path(self, patient_id, image_id):
+        return self.image_dir/f'{patient_id}{self.sep}{image_id}.png'
+
+    def _get_bbox(self, patient_id, image_id):
+        if self.bbox is not None:
+            key = f'{patient_id}/{image_id}.png'
+            if key in self.bbox.keys():
+                bbox = self.bbox[key]
+                bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
+            else:
+                bbox = [0, 0, 100000, 100000, 'YOLO'] # dummy
+        else:
+            bbox = None
+        return bbox
+
+    def _load_best_image(self, df): # for test
+        scores = []
+        images = []
+        bboxes = []
+        if 'implant' in df.columns:
+            is_implant = df['implant'].values[0]
+        else:
+            is_implant = 0
+        for pid, iid in df[['patient_id', 'image_id']].values:
+            img_path = self._get_file_path(pid, iid)
+            bbox = self._get_bbox(pid, iid)
+            img = self._load_image(img_path)
+            bboxes.append(bbox)
+            scores.append(img.mean())
+            images.append(img)
+        if is_implant and self.sample_criteria == 'low_value_for_implant':
+            score_idx = np.argmin(scores)
+        else:
+            score_idx = np.argmax(scores)
+        return images[score_idx], bboxes[score_idx]
+
+    def _load_data(self, idx):
+        pid = self.pids[idx]
+        pdf_lr = self.df_dict[pid]
+        imgs = {}
+        bboxes = {}
+        labels = {}
+        for laterality in ['L', 'R']:
+            pdf = pdf_lr.loc[pdf_lr['laterality'] == laterality]
+            img_v = []
+            bbox_v = []
+            for iv, view_cat in enumerate(self.view_category):
+                view0 = pdf.loc[pdf['view'].isin(view_cat)]
+                if len(view0) == 0:
+                    img_v.append(np.zeros(self.img_size, self.img_size, 1), dtype=np.float32)
+                    bbox_v.append(self._get_bbox('none', 'none'))
+                else:
+                    if self.is_test:
+                        img0, bbox0 = self._load_best_image(view0)
+                        img_v.append(img0)
+                        bbox_v.append(bbox0)
+                    else:
+                        view0 = view0.sample(1)
+                        for pid, iid in view0[['patient_id', 'image_id']].values:
+                            img_path = self._get_file_path(pid, iid)
+                            bbox = self._get_bbox(pid, iid)
+                            img_v.append(self._load_image(img_path))
+                            bbox_v.append(bbox)
+        
+            img = np.stack(img_v, axis=0)
+            imgs[laterality] = img
+            bboxes[laterality] = bbox_v
+            labels[laterality] = torch.from_numpy(pdf[self.target_cols+self.aux_target_cols].values[0].astype(np.float16))
+        
+        if self.transform_imagewise:
+            imgs = np.stack([imgs['L'], imgs['R']], axis=1).squeeze(-1).reshape(-1, self.img_size, self.img_size) # (L, R, L, R, ...)
+            bboxes2 = []
+            for bbox_l, bbox_r in zip(bboxes['L'], bboxes['R']):
+                bboxes2.append(bbox_l)
+                bboxes2.append(bbox_r)
+            imgs = torch.cat([self._process_img(img, bbox) for img, bbox in zip(imgs, bboxes2)], dim=0)
+        else:
+            imgs = np.stack([imgs['L'], imgs['R']], axis=3).squeeze(-1) # (view, h, w, laterality) 
+            imgs = torch.cat([self._process_img(img, None) for img in imgs], dim=0)
+
+        _, h, w = imgs.shape
+        imgs = imgs.view(-1, 2, h, w) # (view, lat, h, w)
+        if self.separate_channel:
+            imgs = imgs.unsqueeze(2) # (view, lat, 1, h, w)
+        labels = torch.stack([labels['L'], labels['R']], dim=0)
+
+        return imgs, labels
+
+    def __getitem__(self, idx):
+        imgs, labels = self._load_data(idx)
+
+        if self.rt_idx:
+            return imgs, labels, idx
+        else:
+            return imgs, labels
+
+    def get_labels(self):
+        labels = []
+        for idx in range(len(self.df_dict)):
+            pid = self.pids[idx]
+            pdf = self.df_dict[pid]
+            for laterality in ['L', 'R']:
+                labels.append(
+                    pdf.loc[pdf['laterality'] == laterality, self.target_cols].values[0].reshape(1, 1).astype(np.float16))
+        return np.concatenate(labels, axis=0)

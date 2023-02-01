@@ -1273,6 +1273,48 @@ class Dataset04(Baseline4):
 class Dataset05(Baseline4):
     name = 'dataset_05'
     addon_train_path = DATA_DIR/'vindr_train_birads05.csv'
+
+
+class Model07(Baseline4):
+    name = 'model_07'
+    model = MultiViewSiameseModel
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True)
+
+
+class Model08(Baseline4):
+    name = 'model_08'
+    dataset = PatientLevelDatasetLR
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant',
+        flip_lr=True, transform_imagewise=False, separate_channel=True,
+    )
+    model = MultiViewSiameseLRModel
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        in_chans=1,
+        pretrained=True)
+    hook = LRTrain()
+    preprocess = dict(
+        train=A.Compose([
+            RandomCropROI(threshold=(0.08, 0.12), buffer=(-20, 100)), A.Resize(1024, 512)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)]),
+    )
+    batch_size = 8
+
+
+class Model08aug0(Model08):
+    name = 'model_08_aug0'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant',
+        flip_lr=False, transform_imagewise=True, separate_channel=True,
+    )
+    preprocess = dict(
+        train=A.Compose([
+            AutoFlip(), RandomCropROI(threshold=(0.08, 0.12), buffer=(-20, 100)), A.Resize(1024, 512)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)]),
+    )
     
 
 class Res02(Baseline4):
@@ -1311,6 +1353,13 @@ class Res02(Baseline4):
     )
 
 
+class Res02vindr(Res02):
+    name = 'pretrain_res02_vindr'
+    train_path = Path('input/rsna-breast-cancer-detection/vindr_train.csv')
+    image_dir = Path('input/rsna-breast-cancer-detection/vindr_mammo_resized_2048V')
+    num_epochs = 10
+
+
 class Res02Aux0(Res02):
     name ='res_02_aux0'
     model_params = dict(
@@ -1325,4 +1374,25 @@ class Res02Aux0(Res02):
     criterion = AuxLoss(loss_types=('bce', 'mse', 'bce'), weights=(2., 1., 1.))
     hook = AuxLossTrain()
 
+
+class Res02pr0(Res02Aux0):
+    name = 'res_02_pr0'
+    weight_path = Path('results/pretrain_res02_vindr/nocv.pt')
+
+
+class Res02aug0(Res02Aux0):
+    name = 'res_02_aug0'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant',
+        aux_target_cols=['age', 'biopsy'],
+        bbox_path='input/rsna-breast-cancer-detection/rsna-yolo-crop/001_baseline/det_result_001_baseline.csv',
+    )
+    preprocess = dict(
+        train=A.Compose([
+            RandomCropBBox(buffer=(-20, 100)), 
+            AutoFlip(sample_width=100), A.Resize(1536, 768)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
     

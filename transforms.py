@@ -85,7 +85,11 @@ class CropROI(DualTransform):
         return self.buffer, self.threshold
 
     def get_params_dependent_on_targets(self, params):
-        img = params['image']
+        _img = params['image']
+        if len(_img.shape) == 3:
+            img = _img.mean(2)
+        else:
+            img = _img
         buffer, threshold = self.get_buffer_thres()
         y_max, x_max = img.shape
         img2 = img > img.mean()
@@ -139,7 +143,11 @@ class RandomCropROI(DualTransform):
         return buf, thres
 
     def get_params_dependent_on_targets(self, params):
-        img = params['image']
+        _img = params['image']
+        if len(_img.shape) == 3:
+            img = _img.mean(2)
+        else:
+            img = _img
         buffer, threshold = self.get_buffer_thres()
         y_max, x_max = img.shape
         img2 = img > img.mean()
@@ -180,52 +188,8 @@ class RandomCropROI(DualTransform):
         return ('threshold', 'buffer')
 
 
-class CropROI2(CropROI):
-
-    def __init__(self, threshold=20, buffer=30, always_apply=True, p=1.0):
-        super().__init__(always_apply, p)
-        self.threshold = threshold
-        self.buffer = buffer
-
-    def get_params_dependent_on_targets(self, params):
-        '''
-        https://www.kaggle.com/code/vslaykovsky/rsna-cut-off-empty-space-from-images
-        '''
-        X = params['image']
-        ymax, xmax = X.shape
-        buffer, threshold = self.get_buffer_thres()
-        X = X[10:-10, 10:-10]
-        # regions of non-empty pixels
-        output= cv2.connectedComponentsWithStats((X > threshold).astype(np.uint8)[:, :, None], 8, cv2.CV_32S)
-        # stats.shape == (N, 5), where N is the number of regions, 5 dimensions correspond to:
-        # left, top, width, height, area_size
-        stats = output[2]
-        # finding max area which always corresponds to the breast data. 
-        idx = stats[1:, 4].argmax() + 1
-        x1, y1, w, h = stats[idx][:4]
-        x2 = x1 + w
-        y2 = y1 + h
-        x1 = max(10, x1-buffer)
-        x2 = min(xmax-10, x2+buffer)
-        y1 = max(10, y1-buffer)
-        y2 = min(ymax-10, y2+buffer)
-        return {"x_min": x1, "x_max": x2, "y_min": y1, "y_max": y2}
-    
-    def get_transform_init_args_names(self):
-        return ('threshold', 'buffer')
-
-
-class RandomCropROI2(CropROI2):
-
-    def __init__(self, threshold=(8, 20), buffer=(0, 120), always_apply=True, p=1.0):
-        super().__init__(always_apply, p)
-        self.threshold = threshold
-        self.buffer = buffer
-
-    def get_buffer_thres(self):
-        thres = np.random.randint(*self.threshold)
-        buf = np.random.randint(*self.buffer)
-        return buf, thres
+CropROI2 = CropROI
+RandomCropROI2 = RandomCropROI
 
 
 class CropBBox(DualTransform):

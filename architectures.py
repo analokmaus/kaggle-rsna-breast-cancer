@@ -145,7 +145,7 @@ class MultiViewModel(nn.Module):
         bs, n_view, ch, w, h = x.shape
         x = x.view(bs*n_view, ch, w, h)
         y = self.attention(self.encoder(x)) # (2n_views x Ch2 x W2 x H2)
-        if self.is_tranformer: # TODO
+        if self.is_tranformer:
             y = y.mean(dim=1).view(bs, n_view, -1).mean(dim=1)
         else:
             if self.spatial_pool:
@@ -156,6 +156,164 @@ class MultiViewModel(nn.Module):
         if not self.spatial_pool:
             y = y.view(bs, n_view, -1)
         y = self.head(y)
+        return y
+
+    
+class MultiViewSiameseModel(nn.Module):
+
+    def __init__(self,
+                 classification_model='resnet18',
+                 classification_params={},
+                 in_chans=1,
+                 num_classes=1,
+                 num_view=2,
+                 custom_classifier='none',
+                 custom_attention='none', 
+                 dropout=0,
+                 hidden_dim=1024,
+                 pretrained=False):
+
+        super().__init__()
+
+        self.encoder = timm.create_model(
+            classification_model,
+            pretrained=pretrained,
+            in_chans=in_chans,
+            num_classes=num_classes,
+            **classification_params
+        )
+        feature_dim = self.encoder.get_classifier().in_features
+        self.encoder.reset_classifier(0, '')
+
+        if custom_attention == 'triplet':
+            self.attention = TripletAttention()
+        else:
+            self.attention = nn.Identity()
+
+        if custom_classifier == 'avg':
+            self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        elif custom_classifier == 'max':
+            self.global_pool = nn.AdaptiveMaxPool2d((1, 1))
+        elif custom_classifier == 'concat':
+            self.global_pool = AdaptiveConcatPool2d()
+            feature_dim = feature_dim * 2
+        elif custom_classifier == 'gem':
+            self.global_pool = AdaptiveGeM(p=3, eps=1e-4)
+        else:
+            self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        
+        if 'Transformer' in self.encoder.__class__.__name__:
+            self.encoder.patch_embed = CustomHybdridEmbed(
+                self.encoder.patch_embed.proj, 
+                channel_in=in_chans,
+                transformer_original_input_size=(1, in_chans, *self.encoder.patch_embed.img_size),
+                pretrained=pretrained
+            )
+            self.is_tranformer = True
+        else:
+            self.is_tranformer = False
+
+        self.head = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear(feature_dim*num_view*2, hidden_dim),
+            nn.ReLU(inplace=True), 
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(hidden_dim, hidden_dim//2), 
+            nn.ReLU(inplace=True), 
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(hidden_dim//2, num_classes))
+
+    def forward(self, x):
+        bs, n_view, ch, w, h = x.shape
+        x = x.view(bs*n_view, ch, w, h)
+        y = self.attention(self.encoder(x)) # (2n_views x Ch2 x W2 x H2)
+        y = self.global_pool(y) # (bs x Ch2 x 1 x 1)
+        y = y.view(bs, n_view, -1)
+        y_s = torch.cat([torch.abs(y[:, 0, :] - y[:, 1, :]), y[:, 0, :] * y[:, 1, :]], dim=1)
+        y = torch.cat([y.view(bs, -1), y_s], dim=1)
+        y = self.head(y)
+        return y
+
+
+class MultiViewSiameseLRModel(nn.Module):
+
+    def __init__(self,
+                 classification_model='resnet18',
+                 classification_params={},
+                 in_chans=1,
+                 num_classes=1,
+                 num_view=2,
+                 custom_classifier='none',
+                 custom_attention='none', 
+                 dropout=0,
+                 hidden_dim=1024,
+                 pretrained=False):
+
+        super().__init__()
+
+        self.encoder = timm.create_model(
+            classification_model,
+            pretrained=pretrained,
+            in_chans=in_chans,
+            num_classes=num_classes,
+            **classification_params
+        )
+        feature_dim = self.encoder.get_classifier().in_features
+        self.encoder.reset_classifier(0, '')
+
+        if custom_attention == 'triplet':
+            self.attention = TripletAttention()
+        else:
+            self.attention = nn.Identity()
+
+        if custom_classifier == 'avg':
+            self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        elif custom_classifier == 'max':
+            self.global_pool = nn.AdaptiveMaxPool2d((1, 1))
+        elif custom_classifier == 'concat':
+            self.global_pool = AdaptiveConcatPool2d()
+            feature_dim = feature_dim * 2
+        elif custom_classifier == 'gem':
+            self.global_pool = AdaptiveGeM(p=3, eps=1e-4)
+        else:
+            self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        
+        if 'Transformer' in self.encoder.__class__.__name__:
+            self.encoder.patch_embed = CustomHybdridEmbed(
+                self.encoder.patch_embed.proj, 
+                channel_in=in_chans,
+                transformer_original_input_size=(1, in_chans, *self.encoder.patch_embed.img_size),
+                pretrained=pretrained
+            )
+            self.is_tranformer = True
+        else:
+            self.is_tranformer = False
+
+        self.head = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear(feature_dim*num_view*3, hidden_dim),
+            nn.ReLU(inplace=True), 
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(hidden_dim, hidden_dim//2), 
+            nn.ReLU(inplace=True), 
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(hidden_dim//2, num_classes))
+
+    def forward(self, x): # (bs, view, lat, h, w)
+        bs, n_view, n_lat, ch, w, h = x.shape
+        x = x.view(bs*n_view*n_lat, ch, w, h)
+        y = self.attention(self.encoder(x)) # (2 n_view n_lat x C2 x W2 x H2)
+        y = self.global_pool(y).view(bs*n_view, n_lat, -1) # (bs n_view x n_lat x C2)
+        y_l = y[:, 0, :]
+        y_r = y[:, 1, :]
+        y_s = torch.cat([torch.abs(y_l - y_r), y_l * y_r], dim=1) # (bs n_view x 2 C2)
+        y_sl = torch.cat([y_s, y_l], dim=1) # (bs n_view x 3 C2)
+        y_sr = torch.cat([y_s, y_r], dim=1) 
+        y_sl = y_sl.view(bs, n_view, -1) # (bs x 3 n_view C2)
+        y_sr = y_sr.view(bs, n_view, -1)
+        y_l = self.head(y_sl)
+        y_r = self.head(y_sr)
+        y = torch.cat([y_l, y_r], dim=1).view(bs*n_lat, 1)
         return y
 
 

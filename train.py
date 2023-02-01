@@ -64,6 +64,7 @@ if __name__ == "__main__":
     cfg = eval(opt.config)
     export_dir = Path('results') / cfg.name
     export_dir.mkdir(parents=True, exist_ok=True)
+    # opt.num_workers = min(cfg.batch_size, opt.num_workers)
 
     ''' Configure logger '''
     log_items = [
@@ -266,10 +267,10 @@ if __name__ == "__main__":
         trainer.register(hook=cfg.hook, callbacks=cfg.callbacks)
         pred_logits = trainer.predict(valid_loader, parallel=inference_parallel, progress_bar=opt.progress_bar)
         target_fold = torch.from_numpy(valid_data.get_labels())
-        if opt.calibrate: # WIP
-            trainer.model = TemperatureScaler(trainer.model).cuda()
-            trainer.model.set_temperature(torch.from_numpy(pred_logits).cuda(), target_fold.cuda())
-            pred_logits = trainer.predict(valid_loader, progress_bar=opt.progress_bar)
+        # if opt.calibrate: # WIP
+        #     trainer.model = TemperatureScaler(trainer.model).cuda()
+        #     trainer.model.set_temperature(torch.from_numpy(pred_logits).cuda(), target_fold.cuda())
+        #     pred_logits = trainer.predict(valid_loader, progress_bar=opt.progress_bar)
         if cfg.hook.__class__.__name__ == 'SingleImageAggregatedTrain': # max aggregation
             valid_fold['prediction'] = pred_logits.reshape(-1)
             agg_df = valid_fold.groupby(['patient_id', 'laterality']).agg(
