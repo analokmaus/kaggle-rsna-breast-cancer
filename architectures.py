@@ -245,6 +245,8 @@ class MultiViewSiameseLRModel(nn.Module):
                  num_view=2,
                  custom_classifier='none',
                  custom_attention='none', 
+                 siamese_2d=False,
+                 pool_view=False,
                  dropout=0,
                  hidden_dim=1024,
                  pretrained=False):
@@ -277,6 +279,11 @@ class MultiViewSiameseLRModel(nn.Module):
             self.global_pool = AdaptiveGeM(p=3, eps=1e-4)
         else:
             self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.siamese_2d = siamese_2d
+        self.pool_view = pool_view
+        if self.pool_view:
+            num_view = num_view // 2
         
         if 'Transformer' in self.encoder.__class__.__name__:
             self.encoder.patch_embed = CustomHybdridEmbed(
@@ -302,15 +309,29 @@ class MultiViewSiameseLRModel(nn.Module):
     def forward(self, x): # (bs, view, lat, h, w)
         bs, n_view, n_lat, ch, w, h = x.shape
         x = x.view(bs*n_view*n_lat, ch, w, h)
-        y = self.attention(self.encoder(x)) # (2 n_view n_lat x C2 x W2 x H2)
-        y = self.global_pool(y).view(bs*n_view, n_lat, -1) # (bs n_view x n_lat x C2)
-        y_l = y[:, 0, :]
-        y_r = y[:, 1, :]
-        y_s = torch.cat([torch.abs(y_l - y_r), y_l * y_r], dim=1) # (bs n_view x 2 C2)
-        y_sl = torch.cat([y_s, y_l], dim=1) # (bs n_view x 3 C2)
-        y_sr = torch.cat([y_s, y_r], dim=1) 
-        y_sl = y_sl.view(bs, n_view, -1) # (bs x 3 n_view C2)
-        y_sr = y_sr.view(bs, n_view, -1)
+        y = self.attention(self.encoder(x)) # (bs n_view n_lat x C2 x W2 x H2)
+        if self.siamese_2d: # 2d siamese
+            _, ch2, w2, h2 = y.shape
+            y = y.view(bs*n_view, n_lat, ch2, w2, h2)
+            y_l = y[:, 0, :, :, :] # (bs n_view x C2 x W2 x H2)
+            y_r = y[:, 1, :, :, :]
+            y_s = torch.cat([torch.abs(y_l - y_r), y_l * y_r], dim=1) # (bs n_view x 2 C2 x W2 x H2)
+            y_sl = torch.cat([y_s, y_l], dim=1) # (bs n_view x 3 C2 x W2 x H2)
+            y_sr = torch.cat([y_s, y_r], dim=1) 
+            y_sl = self.global_pool(y_sl).view(bs, n_view, -1) # (bs x 3 n_view C2)
+            y_sr = self.global_pool(y_sr).view(bs, n_view, -1)
+        else:
+            y = self.global_pool(y).view(bs*n_view, n_lat, -1) # (bs n_view x n_lat x C2)
+            y_l = y[:, 0, :]
+            y_r = y[:, 1, :]
+            y_s = torch.cat([torch.abs(y_l - y_r), y_l * y_r], dim=1) # (bs n_view x 2 C2)
+            y_sl = torch.cat([y_s, y_l], dim=1) # (bs n_view x 3 C2)
+            y_sr = torch.cat([y_s, y_r], dim=1) 
+            y_sl = y_sl.view(bs, n_view, -1) # (bs x 3 n_view C2)
+            y_sr = y_sr.view(bs, n_view, -1)
+        if self.pool_view:
+            y_sl = y_sl.mean(1)
+            y_sr = y_sr.mean(1)
         y_l = self.head(y_sl)
         y_r = self.head(y_sr)
         y = torch.cat([y_l, y_r], dim=1).view(bs*n_lat, 1)

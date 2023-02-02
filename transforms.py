@@ -87,7 +87,7 @@ class CropROI(DualTransform):
     def get_params_dependent_on_targets(self, params):
         _img = params['image']
         if len(_img.shape) == 3:
-            img = _img.mean(2)
+            img = _img.max(2)
         else:
             img = _img
         buffer, threshold = self.get_buffer_thres()
@@ -145,7 +145,7 @@ class RandomCropROI(DualTransform):
     def get_params_dependent_on_targets(self, params):
         _img = params['image']
         if len(_img.shape) == 3:
-            img = _img.mean(2)
+            img = _img.max(2)
         else:
             img = _img
         buffer, threshold = self.get_buffer_thres()

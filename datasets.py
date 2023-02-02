@@ -391,7 +391,7 @@ class PatientLevelDatasetLR(D.Dataset):
     def __len__(self):
         return len(self.df_dict) # num_patients
 
-    def _process_img(self, img, bbox=None):
+    def _preprocess_img(self, img, bbox=None):
         if self.preprocess:
             if bbox is None:
                 img = self.preprocess(image=img)['image']
@@ -401,6 +401,9 @@ class PatientLevelDatasetLR(D.Dataset):
                 bbox[3] = min(bbox[3], img_w)
                 img = self.preprocess(image=img, bboxes=[bbox])['image']
 
+        return img
+    
+    def _augment_img(self, img):
         if self.transforms:
             img = self.transforms(image=img)['image']
         
@@ -453,45 +456,41 @@ class PatientLevelDatasetLR(D.Dataset):
         pid = self.pids[idx]
         pdf_lr = self.df_dict[pid]
         imgs = {}
-        bboxes = {}
         labels = {}
         for laterality in ['L', 'R']:
             pdf = pdf_lr.loc[pdf_lr['laterality'] == laterality]
             img_v = []
-            bbox_v = []
             for iv, view_cat in enumerate(self.view_category):
                 view0 = pdf.loc[pdf['view'].isin(view_cat)]
                 if len(view0) == 0:
-                    img_v.append(np.zeros(self.img_size, self.img_size, 1), dtype=np.float32)
-                    bbox_v.append(self._get_bbox('none', 'none'))
+                    img0 = np.zeros((self.img_size, self.img_size, 1), dtype=np.uint8)
+                    bbox0 = self._get_bbox('none', 'none')
+                    img0 = self._preprocess_img(img0, bbox0)
+                    img_v.append(img0)
                 else:
                     if self.is_test:
                         img0, bbox0 = self._load_best_image(view0)
+                        img0 = self._preprocess_img(img0, bbox0)
                         img_v.append(img0)
-                        bbox_v.append(bbox0)
                     else:
                         view0 = view0.sample(1)
                         for pid, iid in view0[['patient_id', 'image_id']].values:
                             img_path = self._get_file_path(pid, iid)
-                            bbox = self._get_bbox(pid, iid)
-                            img_v.append(self._load_image(img_path))
-                            bbox_v.append(bbox)
-        
+                            bbox0 = self._get_bbox(pid, iid)
+                            img0 = self._load_image(img_path)
+                            img0 = self._preprocess_img(img0, bbox0)
+                            img_v.append(img0)
             img = np.stack(img_v, axis=0)
             imgs[laterality] = img
-            bboxes[laterality] = bbox_v
             labels[laterality] = torch.from_numpy(pdf[self.target_cols+self.aux_target_cols].values[0].astype(np.float16))
         
         if self.transform_imagewise:
-            imgs = np.stack([imgs['L'], imgs['R']], axis=1).squeeze(-1).reshape(-1, self.img_size, self.img_size) # (L, R, L, R, ...)
-            bboxes2 = []
-            for bbox_l, bbox_r in zip(bboxes['L'], bboxes['R']):
-                bboxes2.append(bbox_l)
-                bboxes2.append(bbox_r)
-            imgs = torch.cat([self._process_img(img, bbox) for img, bbox in zip(imgs, bboxes2)], dim=0)
+            img_size = imgs['L'].shape[1:]
+            imgs = np.stack([imgs['L'], imgs['R']], axis=1).squeeze(-1).reshape(-1, *img_size) # (L, R, L, R, ...)
+            imgs = torch.cat([self._augment_img(img) for img in imgs], dim=0)
         else:
             imgs = np.stack([imgs['L'], imgs['R']], axis=3).squeeze(-1) # (view, h, w, laterality) 
-            imgs = torch.cat([self._process_img(img, None) for img in imgs], dim=0)
+            imgs = torch.cat([self._augment_img(img) for img in imgs], dim=0)
 
         _, h, w = imgs.shape
         imgs = imgs.view(-1, 2, h, w) # (view, lat, h, w)

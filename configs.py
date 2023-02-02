@@ -1287,8 +1287,8 @@ class Model08(Baseline4):
     name = 'model_08'
     dataset = PatientLevelDatasetLR
     dataset_params = dict(
-        sample_criteria='low_value_for_implant',
-        flip_lr=True, transform_imagewise=False, separate_channel=True,
+        sample_criteria='low_value_for_implant', img_size=2048,
+        transform_imagewise=False, separate_channel=True,
     )
     model = MultiViewSiameseLRModel
     model_params = dict(
@@ -1296,25 +1296,33 @@ class Model08(Baseline4):
         in_chans=1,
         pretrained=True)
     hook = LRTrain()
-    preprocess = dict(
-        train=A.Compose([
-            RandomCropROI(threshold=(0.08, 0.12), buffer=(-20, 100)), A.Resize(1024, 512)]),
-        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)]),
-    )
     batch_size = 8
 
 
 class Model08aug0(Model08):
     name = 'model_08_aug0'
     dataset_params = dict(
-        sample_criteria='low_value_for_implant',
-        flip_lr=False, transform_imagewise=True, separate_channel=True,
+        sample_criteria='low_value_for_implant', img_size=2048,
+        transform_imagewise=True, separate_channel=True,
     )
-    preprocess = dict(
-        train=A.Compose([
-            AutoFlip(), RandomCropROI(threshold=(0.08, 0.12), buffer=(-20, 100)), A.Resize(1024, 512)]),
-        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)]),
-    )
+
+
+class Model08v0(Model08):
+    name = 'model_08_v0'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        in_chans=1,
+        pool_view=True,
+        pretrained=True)
+
+
+class Model08v1(Model08):
+    name = 'model_08_v1'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        in_chans=1,
+        dropout=0.1,
+        pretrained=True)
     
 
 class Res02(Baseline4):
