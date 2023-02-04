@@ -84,6 +84,7 @@ class MultiViewModel(nn.Module):
                  num_view=2,
                  custom_classifier='none',
                  custom_attention='none', 
+                 pool_view=False,
                  dropout=0,
                  hidden_dim=1024,
                  spatial_pool=False,
@@ -128,18 +129,21 @@ class MultiViewModel(nn.Module):
             self.is_tranformer = True
         else:
             self.is_tranformer = False
+        
+        self.spatial_pool = spatial_pool
+        self.pool_view = pool_view
+        if self.spatial_pool or self.pool_view:
+            num_view = num_view // 2
 
         self.head = nn.Sequential(
             nn.Flatten(start_dim=1),
-            nn.Linear(feature_dim*num_view, hidden_dim) if not spatial_pool else nn.Linear(feature_dim, hidden_dim), 
+            nn.Linear(feature_dim*num_view, hidden_dim),
             nn.ReLU(inplace=True), 
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
             nn.Linear(hidden_dim, hidden_dim//2), 
             nn.ReLU(inplace=True), 
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
             nn.Linear(hidden_dim//2, num_classes))
-        
-        self.spatial_pool = spatial_pool
 
     def forward(self, x): # (N x n_views x Ch x W x H)
         bs, n_view, ch, w, h = x.shape
@@ -155,6 +159,8 @@ class MultiViewModel(nn.Module):
             y = self.global_pool(y) # (bs x Ch2 x 1 x 1)
         if not self.spatial_pool:
             y = y.view(bs, n_view, -1)
+            if self.pool_view:
+                y = y.mean(1)
         y = self.head(y)
         return y
 
@@ -334,7 +340,7 @@ class MultiViewSiameseLRModel(nn.Module):
             y_sr = y_sr.mean(1)
         y_l = self.head(y_sl)
         y_r = self.head(y_sr)
-        y = torch.cat([y_l, y_r], dim=1).view(bs*n_lat, 1)
+        y = torch.stack([y_l, y_r], dim=1).view(bs*n_lat, -1)
         return y
 
 
@@ -376,6 +382,7 @@ class MultiLevelModel(nn.Module):
                  crop_num=4,
                  percent_t=0.02,
                  local_attention=False,
+                 pool_view=False,
                  pretrained=False):
 
         super().__init__()
@@ -409,26 +416,31 @@ class MultiLevelModel(nn.Module):
         else:
             self.local_attention = nn.Identity()
 
+        if pool_view:
+            _num_view = num_view // 2
+        else:
+            _num_view = num_view
+
         self.local_head = nn.Sequential(
             nn.Flatten(start_dim=1),
-            nn.Linear(local_feature_dim*num_view, hidden_dim), 
+            nn.Linear(local_feature_dim*_num_view, hidden_dim), 
             nn.ReLU(inplace=True), 
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
             nn.Linear(hidden_dim, num_classes))
         self.concat_head = nn.Sequential(
             nn.Flatten(start_dim=1),
-            nn.Linear((global_feature_dim+local_feature_dim)*num_view, hidden_dim), 
+            nn.Linear((global_feature_dim+local_feature_dim)*_num_view, hidden_dim), 
             nn.ReLU(inplace=True), 
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
             nn.Linear(hidden_dim, num_classes))
         
-
         self.localizer = nn.Conv2d(global_feature_dim, num_classes, (1, 1), bias=False)
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.crop_size = crop_size
         self.crop_num = crop_num
         self.percent_t = percent_t
         self.num_view = num_view
+        self.pool_view = pool_view
 
     def crop_roi(self, x, cam): # current implementation is for 1 class only
         crop_size = self.crop_size
@@ -491,8 +503,11 @@ class MultiLevelModel(nn.Module):
         if self.num_view > 1:
             local_features = local_features.view(bs, self.num_view, -1) # (N x n_views x Ch3)
             global_features = global_features.view(bs, self.num_view, -1) # (N x n_views x Ch2)
-            y_global = y_global.view(bs, self.num_view, -1).amax(dim=1) # 
+            y_global = y_global.view(bs, self.num_view, -1).mean(1)
         concat_features = torch.concat([local_features, global_features], dim=2) # (bs x n_views x Ch2+Ch3)
+        if self.pool_view:
+            local_features = local_features.mean(1)
+            concat_features = concat_features.mean(1)
         y_local = self.local_head(local_features)
         y_concat = self.concat_head(concat_features)
         return y_concat, y_global, y_local

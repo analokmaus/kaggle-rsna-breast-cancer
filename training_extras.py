@@ -164,19 +164,20 @@ class LRTrain(SimpleHook):
 
     def forward_train(self, trainer, inputs):
         inputs, target = inputs
-        target = target.view(-1, 1)
+        bs, lat, _ = target.shape
+        target = target.view(bs*lat, -1)
         approx = trainer.model(inputs)
         loss = trainer.criterion(approx, target)
         storage = trainer.epoch_storage
-        storage['approx'].append(approx.detach())
-        storage['target'].append(target)
-        return loss, approx.detach()
+        storage['approx'].append(approx[:, 0].view(-1, 1).detach())
+        storage['target'].append(target[:, 0].view(-1, 1))
+        return loss, approx[:, 0].view(-1, 1).detach()
 
     forward_valid = forward_train
 
     def forward_test(self, trainer, inputs):
         approx = trainer.model(inputs[0]) 
-        return approx # (l, r, l, r, ...)
+        return approx[:, 0].view(-1, 1) # (l, r, l, r, ...)
 
     def __repr__(self) -> str:
         return f'LRTrain()'

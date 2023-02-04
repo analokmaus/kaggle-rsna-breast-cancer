@@ -139,3 +139,19 @@ class ResizedSegLoss(nn.Module):
     def __repr__(self):
         return f'ResizedMSE(loss_type={self.loss_type})'
     
+
+class NegativeContrastiveLoss(nn.Module):
+    '''
+    '''
+    def __init__(self, margin=1.0):
+        super().__init__()
+        self.margin = margin
+
+    def forward(self, x1, x2):
+        label = 1
+        dist = torch.nn.functional.pairwise_distance(x1, x2)
+        loss = (1 - label) * torch.pow(dist, 2) \
+            + (label) * torch.pow(torch.clamp(self.margin - dist, min=0.0), 2)
+        loss = torch.mean(loss)
+        return loss
+    

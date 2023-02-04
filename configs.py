@@ -1127,6 +1127,31 @@ class Baseline4vindr(Baseline4):
     num_epochs = 10
 
 
+class Baseline4vindr2(Baseline4):
+    name = 'pretrain_baseline4_vindr2'
+    train_path = Path('input/rsna-breast-cancer-detection/vindr_train.csv')
+    image_dir = Path('input/rsna-breast-cancer-detection/vindr_mammo_resized_2048V')
+    num_epochs = 15
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True,
+        dropout=0.05,
+        num_classes=2)
+    target_cols = ['BIRADS']
+    dataset_params = dict(
+        aux_target_cols=['density']
+    )
+    criterion = AuxLoss(loss_types=('mse', 'mse'), weights=(1., 1.))
+    eval_metric = nn.L1Loss()
+    monitor_metrics = []
+    callbacks = [
+        EarlyStopping(patience=5, maximize=False, skip_epoch=0, target='train_metric'),
+        SaveSnapshot()
+    ]
+    hook = AuxLossTrain()
+
+
 class Baseline4pr0(Baseline4):
     name = 'baseline_4_pr0'
     weight_path = Path('results/pretrain_baseline4_ddsm/nocv.pt')
@@ -1151,6 +1176,43 @@ class Aug07(Baseline4):
         test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
             bbox_params=A.BboxParams(format='pascal_voc')),
     )
+
+
+class Aug07pr0(Aug07):
+    name = 'aug_07_pr0'
+    weight_path = Path('results/pretrain_baseline4_vindr2/nocv.pt')
+
+
+class Aug07aug0(Aug07):
+    name = 'aug_07_aug0'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+
+
+class Aug07v0(Aug07):
+    name = 'aug_07_v0'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True,
+        dropout=0.1)
 
 
 class Aug08(Aug07):
@@ -1323,7 +1385,61 @@ class Model08v1(Model08):
         in_chans=1,
         dropout=0.1,
         pretrained=True)
-    
+
+
+class Model09(Model08):
+    name = 'model_09'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        in_chans=1,
+        pool_view=True,
+        dropout=0.1,
+        pretrained=True)
+
+
+class Model09aux0(Model09):
+    name = 'model_09_aux0'
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        in_chans=1,
+        num_classes=3,
+        pool_view=True,
+        dropout=0.1,
+        pretrained=True)
+    target_cols = ['cancer']
+    dataset_params = dict(
+        aux_target_cols=['age', 'biopsy'], 
+        sample_criteria='low_value_for_implant', img_size=2048,
+        transform_imagewise=False, separate_channel=True,
+    )
+    criterion = AuxLoss(loss_types=('bce', 'bce', 'bce'), weights=(2., 1., 1.))
+
+
+class Model10(Aug07aug0):
+    name = 'model_10'
+    model = MultiLevelModel
+    model_params = dict(
+        global_model='convnext_small.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+    )
+    criterion = MultiLevelLoss()
+    hook = MultiLevelTrain()
+
+
+class Model10v0(Model10):
+    name = 'model_10_v0'
+    model_params = dict(
+        global_model='convnext_small.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+        pool_view=True
+    )
+
 
 class Res02(Baseline4):
     name = 'res_02'
@@ -1404,3 +1520,18 @@ class Res02aug0(Res02Aux0):
             bbox_params=A.BboxParams(format='pascal_voc')),
     )
     
+
+class Res02mod0(Res02):
+    name = 'res_02_mod0'
+    dataset = PatientLevelDatasetLR
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant', img_size=2048,
+        transform_imagewise=False, separate_channel=True,
+    )
+    model = MultiViewSiameseLRModel
+    model_params = dict(
+        classification_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        in_chans=1,
+        pretrained=True)
+    hook = LRTrain()
+    batch_size = 8

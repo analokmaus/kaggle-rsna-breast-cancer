@@ -40,7 +40,7 @@ class PatientLevelDataset(D.Dataset):
         self.view_category = view_category
         self.replace = replace
         self.sample_criteria = sample_criteria
-        assert sample_criteria in ['high_value', 'low_value_for_implant']
+        assert sample_criteria in ['high_value', 'low_value_for_implant', 'latest']
         if mixup_params:
             assert 'alpha' in mixup_params.keys()
             self.mu = True
@@ -92,28 +92,40 @@ class PatientLevelDataset(D.Dataset):
     def _get_file_path(self, patient_id, image_id):
         return self.image_dir/f'{patient_id}{self.sep}{image_id}.png'
 
+    def _get_bbox(self, patient_id, image_id):
+        if self.bbox is not None:
+            key = f'{patient_id}/{image_id}.png'
+            if key in self.bbox.keys():
+                bbox = self.bbox[key]
+                bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
+            else:
+                bbox = [0, 0, 100000, 100000, 'YOLO'] # dummy
+        else:
+            bbox = None
+        return bbox
+
     def _load_best_image(self, df): # for test
+        if self.sample_criteria == 'latest':
+            try:
+                latest_idx = np.argmax(df['content_date'])
+                df2 = df.iloc[latest_idx:latest_idx+1]
+            except:
+                pass
+        else:
+            df2 = df
         scores = []
         images = []
         bboxes = []
         iids = []
-        if 'implant' in df.columns:
-            is_implant = df['implant'].values[0]
+        if 'implant' in df2.columns:
+            is_implant = df2['implant'].values[0]
         else:
             is_implant = 0
-        for pid, iid in df[['patient_id', 'image_id']].values:
+        for pid, iid in df2[['patient_id', 'image_id']].values:
             img_path = self._get_file_path(pid, iid)
+            bbox = self._get_bbox(pid, iid)
             img = cv2.imread(str(img_path))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            if self.bbox is not None:
-                key = f'{pid}/{iid}.png'
-                if key in self.bbox.keys():
-                    bbox = self.bbox[key]
-                    bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
-                else:
-                    bbox = [0, 0, 100000, 100000, 'YOLO'] # dummy
-            else:
-                bbox = None
             bboxes.append(bbox)
             scores.append(img.mean())
             images.append(img)
@@ -147,15 +159,7 @@ class PatientLevelDataset(D.Dataset):
                     img0 = []
                     for pid, iid in view0[['patient_id', 'image_id']].values:
                         img_path = self._get_file_path(pid, iid)
-                        if self.bbox is not None:
-                            key = f'{pid}/{iid}.png'
-                            if key in self.bbox.keys():
-                                bbox = self.bbox[key]
-                                bbox = [bbox['ymin'], bbox['xmin'], bbox['ymax'], bbox['xmax'], 'YOLO']
-                            else:
-                                bbox = [0, 0, 100000, 100000, 'YOLO'] # dummy
-                        else:
-                            bbox = None
+                        bbox = self._get_bbox(pid, iid)
                         img0.append(self._load_image(img_path, bbox))
                         if not self.replace:
                             img_ids.append(iid)

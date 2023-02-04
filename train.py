@@ -90,8 +90,11 @@ if __name__ == "__main__":
     seed_everything(cfg.seed, cfg.deterministic)
     print_config(cfg, LOGGER)
     train = pd.read_csv(cfg.train_path)
-    for col in ['age']:
-        train[col] = train[col].fillna(train[col].mean()) / 100.
+    # data preprocessor
+    if 'density' in train.columns:
+        train['density'] = train['density'].replace({'A': 0, 'B': 1, 'C': 2, 'D': 3})
+    if 'age' in train.columns:
+        train['age'] = train['age'].fillna(train['age'].mean()) / 100.
     if 'aux_target_cols' in cfg.dataset_params.keys():
         if 'machine_id' in cfg.dataset_params['aux_target_cols']:
             train['machine_id'] = train['machine_id'].isin([93, 210, 216]).astype(float)
