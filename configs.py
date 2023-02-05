@@ -1111,6 +1111,21 @@ class Baseline4(Baseline): # Equivalent to Model05v3aug2, 4 fold cv
         SaveSnapshot()
     ]
 
+class Baseline4mod0(Baseline4):
+    name = 'baseline_4_mod0'
+    model_params = dict(
+        classification_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True)
+
+
+class Baseline4mod1(Baseline4):
+    name = 'baseline_4_mod1'
+    model_params = dict(
+        classification_model='convnext_nano.in12k_ft_in1k',
+        pretrained=True,
+        spatial_pool=True)
+
 
 class Baseline4ddsm(Baseline4):
     name = 'pretrain_baseline4_ddsm'
@@ -1178,6 +1193,11 @@ class Aug07(Baseline4):
     )
 
 
+class Aug07prep0(Aug07):
+    name = 'aug_07_prep0'
+    image_dir = Path('input/rsna-breast-cancer-detection/image_resized_2048VS')
+
+
 class Aug07pr0(Aug07):
     name = 'aug_07_pr0'
     weight_path = Path('results/pretrain_baseline4_vindr2/nocv.pt')
@@ -1200,6 +1220,39 @@ class Aug07aug0(Aug07):
             A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
             ToTensorV2()
         ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+
+
+class Aug07aug1(Aug07):
+    name = 'aug_07_aug1'
+    transforms = dict(
+        train=A.Compose([
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.ShiftScaleRotate(p=0.5),
+            # A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=10, val_shift_limit=10, p=0.7),
+            A.RandomBrightnessContrast(brightness_limit=(-0.2,0.2), contrast_limit=(-0.2, 0.2), p=0.7),
+            A.CLAHE(clip_limit=(1,4), p=0.5),
+            A.OneOf([
+                A.OpticalDistortion(distort_limit=1.0),
+                A.GridDistortion(num_steps=5, distort_limit=1.),
+                A.ElasticTransform(alpha=3),
+            ], p=0.2),
+            A.OneOf([
+                A.GaussNoise(var_limit=[10, 50]),
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.2),
+            A.PiecewiseAffine(p=0.2),
+            A.Sharpen(p=0.2),
+            # A.Cutout(max_h_size=int(1024 * 0.2), max_w_size=int(512 * 0.2), num_holes=5, p=0.5),
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2(),
+        ]),
         test=A.Compose([
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
         ])
