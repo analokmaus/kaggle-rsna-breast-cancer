@@ -14,7 +14,7 @@ except:
     ExhaustiveWeightedRandomSampler = None
 
 from kuma_utils.torch.callbacks import (
-    EarlyStopping, SaveSnapshot, SaveEveryEpoch, SaveAllSnapshots)
+    EarlyStopping, SaveSnapshot, SaveEveryEpoch, SaveAllSnapshots, SaveAverageSnapshot)
 from kuma_utils.torch.hooks import TrainHook
 from kuma_utils.metrics import AUC
 
@@ -1167,6 +1167,14 @@ class Baseline4vindr2(Baseline4):
     hook = AuxLossTrain()
 
 
+class Baseline4vindr3(Baseline4vindr):
+    name = 'pretrain_baseline4_vindr3'
+    callbacks = [
+        EarlyStopping(patience=6, maximize=True, skip_epoch=0),
+        SaveAverageSnapshot(num_snapshot=5)
+    ]
+
+
 class Baseline4pr0(Baseline4):
     name = 'baseline_4_pr0'
     weight_path = Path('results/pretrain_baseline4_ddsm/nocv.pt')
@@ -1298,6 +1306,28 @@ class Aug09(Aug07):
         test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
             bbox_params=A.BboxParams(format='pascal_voc')),
     )
+
+
+class Aug10(Baseline4):
+    name = 'aug_10'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant',
+        bbox_path='input/rsna-breast-cancer-detection/rsna-yolo-crop/001_baseline/det_result_001_baseline.csv',
+    )
+    preprocess = dict(
+        train=A.Compose([
+            RandomCropBBox2(buffer=(-20, 100)), 
+            AutoFlip(sample_width=100), A.Resize(1024, 512)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
+
+
+class Aug10es0(Aug10):
+    name = 'aug_10_es0'
+    eval_metric = AUC().torch
+    monitor_metrics = [Pfbeta(binarize=True), Pfbeta(binarize=False)]
 
 
 class AuxLoss00(Baseline4):

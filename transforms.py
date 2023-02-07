@@ -151,8 +151,8 @@ class RandomCropROI(DualTransform):
         buffer, threshold = self.get_buffer_thres()
         y_max, x_max = img.shape
         img2 = img > img.mean()
-        y_mean = img2.mean(0)
-        x_mean = img2.mean(1)
+        y_mean = img2.mean(1)
+        x_mean = img2.mean(0)
         x_mean[:5] = 0
         x_mean[-5:] = 0
         y_mean[:5] = 0
@@ -169,7 +169,7 @@ class RandomCropROI(DualTransform):
             y_start, y_end = 0, y_max
         else:
             y_start, y_end = max(y_slice.min() - buffer, 0), min(y_slice.max() + buffer, y_max)
-        return {"x_min": y_start, "x_max": y_end, "y_min": x_start, "y_max": x_end}
+        return {"x_min": x_start, "x_max": x_end, "y_min": y_start, "y_max": y_end}
 
     def apply(self, img, x_min=0, y_min=0, x_max=0, y_max=0, **params):
         return img[y_min:y_max, x_min:x_max]
@@ -189,7 +189,65 @@ class RandomCropROI(DualTransform):
 
 
 CropROI2 = CropROI
-RandomCropROI2 = RandomCropROI
+
+
+class RandomCropROI2(DualTransform):
+
+    def __init__(self, threshold=(0.08, 0.12), buffer=(0, 160), always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.threshold = threshold
+        self.buffer = buffer
+
+    def get_buffer_thres(self):
+        thres = np.random.uniform(*self.threshold)
+        buf = np.random.randint(*self.buffer)
+        return buf, thres
+
+    def get_params_dependent_on_targets(self, params):
+        _img = params['image']
+        if len(_img.shape) == 3:
+            img = _img.max(2)
+        else:
+            img = _img
+        buffer1, threshold = self.get_buffer_thres()
+        buffer2, _ = self.get_buffer_thres()
+        y_max, x_max = img.shape
+        img2 = img > img.mean()
+        y_mean = img2.mean(1)
+        x_mean = img2.mean(0)
+        x_mean[:5] = 0
+        x_mean[-5:] = 0
+        y_mean[:5] = 0
+        y_mean[-5:] = 0
+        y_mean = (y_mean - y_mean.min() + 1e-4) / (y_mean.max() - y_mean.min() + 1e-4)
+        x_mean = (x_mean - x_mean.min() + 1e-4) / (x_mean.max() - x_mean.min() + 1e-4)
+        y_slice = np.where(y_mean > threshold)[0]
+        x_slice = np.where(x_mean > threshold)[0]
+        if len(x_slice) == 0:
+            x_start, x_end = 0, x_max
+        else:
+            x_start, x_end = max(x_slice.min() - buffer1, 0), min(x_slice.max() + buffer1, x_max)
+        if len(y_slice) == 0:
+            y_start, y_end = 0, y_max
+        else:
+            y_start, y_end = max(y_slice.min() - buffer2, 0), min(y_slice.max() + buffer2, y_max)
+        return {"x_min": x_start, "x_max": x_end, "y_min": y_start, "y_max": y_end}
+
+    def apply(self, img, x_min=0, y_min=0, x_max=0, y_max=0, **params):
+        return img[y_min:y_max, x_min:x_max]
+
+    def apply_to_mask(self, mask, x_min=0, y_min=0, x_max=0, y_max=0, **params):
+        return mask[y_min:y_max, x_min:x_max, :]
+
+    def apply_to_bbox(self, bbox, x_min=0, y_min=0, x_max=0, y_max=0, **params): # TODO
+        return bbox
+    
+    @property
+    def targets_as_params(self):
+        return ["image"]
+    
+    def get_transform_init_args_names(self):
+        return ('threshold', 'buffer')
 
 
 class CropBBox(DualTransform):
@@ -239,6 +297,41 @@ class RandomCropBBox(DualTransform):
         x_max = int(img_x*bbox[2]) + buf
         y_min = int(img_y*bbox[1]) - buf
         y_max = int(img_y*bbox[3]) + buf
+        x_min = max(0, x_min)
+        y_min = max(0, y_min)
+        return {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}
+
+    def apply(
+        self, img: np.ndarray, x_min: int = 0, x_max: int = 0, y_min: int = 0, y_max: int = 0, **params
+    ) -> np.ndarray:
+        return img[y_min:y_max, x_min:x_max]
+    
+    def apply_to_bbox(self, bbox, **params):
+        return bbox
+    
+    @property
+    def targets_as_params(self):
+        return ["image", "bboxes"]
+    
+    def get_transform_init_args_names(self):
+        return {'buffer': self.buffer}
+
+
+class RandomCropBBox2(DualTransform):
+
+    def __init__(self, buffer=(0, 120), always_apply=True, p=1.0):
+        super().__init__(always_apply, p)
+        self.buffer = buffer
+
+    def get_params_dependent_on_targets(self, params):
+        img_y, img_x = params['image'].shape[:2]
+        bbox = params['bboxes'][0]
+        buf1 = np.random.randint(*self.buffer)
+        buf2 = np.random.randint(*self.buffer)
+        x_min = int(img_x*bbox[0]) - buf1
+        x_max = int(img_x*bbox[2]) + buf1
+        y_min = int(img_y*bbox[1]) - buf2
+        y_max = int(img_y*bbox[3]) + buf2
         x_min = max(0, x_min)
         y_min = max(0, y_min)
         return {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max}

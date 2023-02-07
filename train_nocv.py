@@ -224,17 +224,25 @@ if __name__ == "__main__":
         checkpoint = torch.load(export_dir/f'nocv.pt', 'cpu')
         fit_state_dict(checkpoint['model'], model)
         model.load_state_dict(checkpoint['model'])
+        # clean up checkpoint
+        if 'checkpoints' in checkpoint.keys():
+            del checkpoint['checkpoints']
+            torch.save(checkpoint, export_dir/f'nocv.pt')
         del checkpoint; gc.collect()
         if cfg.parallel == 'ddp':
             model = convert_sync_batchnorm(model)
-            inference_parallel = None
+            inference_parallel = 'dp'
+            valid_loader = D.DataLoader(
+                valid_data, batch_size=cfg.batch_size*4, shuffle=False,
+                num_workers=opt.num_workers, pin_memory=False)
         else:
             inference_parallel = None
 
         trainer = TorchTrainer(model, serial=f'nocv', device=opt.gpu)
         trainer.logger = LOGGER
         trainer.register(hook=cfg.hook, callbacks=cfg.callbacks)
-        pred_logits = trainer.predict(valid_loader, parallel=inference_parallel, progress_bar=opt.progress_bar)
+        pred_logits = trainer.predict(
+            valid_loader, parallel=inference_parallel, progress_bar=opt.progress_bar)
         target_fold = torch.from_numpy(valid_data.get_labels())
         if opt.calibrate: # WIP
             trainer.model = TemperatureScaler(trainer.model).cuda()
