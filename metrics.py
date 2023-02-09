@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
+from sklearn.metrics import roc_auc_score
 from kuma_utils.metrics import MetricTemplate
 
 
@@ -19,6 +20,8 @@ class Pfbeta(nn.Module):
             labels = labels.reshape(-1)
         if len(predictions.shape) == 2:
             predictions = predictions.reshape(-1)
+        if not np.isin(labels, [0., 1.]).all():
+            labels = (labels >= np.percentile(labels, 98)).astype(float)
         y_true_count = 0
         ctp = 0
         cfp = 0
@@ -81,4 +84,26 @@ class IoU(nn.Module):
     def forward(self, approx, target):
         tp, fp, fn, tn = smp.metrics.get_stats(approx.sigmoid(), target.round().long(), mode='multilabel', threshold=0.5)
         return smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
+    
+
+class ContinuousAUC(MetricTemplate):
+    '''
+    Area under ROC curve
+    '''
+    def __init__(self, threshold_percentile=98.):
+        super().__init__(maximize=True)
+        self.p = threshold_percentile
+
+    def _test(self, target, approx):
+        if len(approx.shape) == 1:
+            approx = approx
+        elif approx.shape[1] == 1:
+            approx = np.squeeze(approx)
+        elif approx.shape[1] == 2:
+            approx = approx[:, 1]
+        else:
+            raise ValueError(f'Invalid approx shape: {approx.shape}')
+        if not np.isin(target, [0., 1.]).all():
+            target = (target >= np.percentile(target, self.p)).astype(float)
+        return roc_auc_score(target, approx)
     

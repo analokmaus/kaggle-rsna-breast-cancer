@@ -17,6 +17,7 @@ wavelets_pytorch/
 results*/
 requirements/
 kaggle/
+kaggle2/
 logs/
 input/*
 pyfstat*/

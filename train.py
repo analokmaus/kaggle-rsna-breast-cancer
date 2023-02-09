@@ -141,6 +141,8 @@ if __name__ == "__main__":
             **cfg.dataset_params)
         if cfg.addon_train_path is not None:
             addon_train = pd.read_csv(cfg.addon_train_path)
+            if 'fold' in addon_train.columns:
+                addon_train = addon_train.loc[addon_train['fold'] == fold]
             train_data.update_df(addon_train)
         train_weights = train_data.get_labels().reshape(-1)
         valid_weights = valid_data.get_labels().reshape(-1)

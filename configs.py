@@ -14,7 +14,7 @@ except:
     ExhaustiveWeightedRandomSampler = None
 
 from kuma_utils.torch.callbacks import (
-    EarlyStopping, SaveSnapshot, SaveEveryEpoch, SaveAllSnapshots, SaveAverageSnapshot)
+    EarlyStopping, SaveSnapshot, SaveEveryEpoch, SaveAllSnapshots, SaveAverageSnapshot, CollectTopK)
 from kuma_utils.torch.hooks import TrainHook
 from kuma_utils.metrics import AUC
 
@@ -641,7 +641,7 @@ class Model04v5(Model04):
     optimizer_params = dict(lr=1e-5, weight_decay=1e-6)
     optimizer = optim.AdamW
     eval_metric = Pfbeta(average_both=True)
-    monitor_metrics = [AUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True)]
+    monitor_metrics = [AUC().torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
 
 
 class Model04v6(Model04):
@@ -1170,8 +1170,9 @@ class Baseline4vindr2(Baseline4):
 class Baseline4vindr3(Baseline4vindr):
     name = 'pretrain_baseline4_vindr3'
     callbacks = [
-        EarlyStopping(patience=6, maximize=True, skip_epoch=0),
-        SaveAverageSnapshot(num_snapshot=5)
+        # EarlyStopping(patience=6, maximize=True, skip_epoch=0),
+        CollectTopK(k=3, maximize=True, target='train_metric'), 
+        SaveAverageSnapshot(num_snapshot=3)
     ]
 
 
@@ -1276,6 +1277,47 @@ class Aug07v0(Aug07):
         dropout=0.1)
 
 
+class Aug07v1(Aug07):
+    name = 'aug_07_v1'
+    callbacks = [
+        # EarlyStopping(patience=6, maximize=True, skip_epoch=0),
+        SaveEveryEpoch(), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
+
+
+class Aug07pl0(Aug07v1):
+    name = 'aug_07_pl0'
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v1_soft.csv')
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+
+
+class Aug07pl0es0(Aug07pl0):
+    name = 'aug_07_pl0_es0'
+    callbacks = [
+        EarlyStopping(patience=6, maximize=True, skip_epoch=0),
+        # SaveEveryEpoch(), 
+        SaveAverageSnapshot(num_snapshot=3) # Save average of 3 best model
+    ]
+
+
+class Aug07pl1(Aug07pl0):
+    name = 'aug_07_pl1'
+    dataset_params = dict(
+        sample_criteria='low_value_for_implant',
+        bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
+    )
+    callbacks = [
+        CollectTopK(k=3), 
+        SaveAverageSnapshot(num_snapshot=3) # Save average of 3 best model
+    ]
+
+
+class Aug07pl2(Aug07pl1):
+    name = 'aug_07_pl2'
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v1_soft_2575.csv')
+
+
 class Aug08(Aug07):
     name = 'aug_08'
     preprocess = dict(
@@ -1328,6 +1370,14 @@ class Aug10es0(Aug10):
     name = 'aug_10_es0'
     eval_metric = AUC().torch
     monitor_metrics = [Pfbeta(binarize=True), Pfbeta(binarize=False)]
+
+
+class Aug10es1(Aug10):
+    name = 'aug_10_es1'
+    callbacks = [
+        SaveEveryEpoch(), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
 
 
 class AuxLoss00(Baseline4):
@@ -1602,6 +1652,33 @@ class Res02aug0(Res02Aux0):
         test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)],
             bbox_params=A.BboxParams(format='pascal_voc')),
     )
+
+
+class Res02aug1(Res02Aux0):
+    name = 'res_02_aug1'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+    callbacks = [
+        SaveEveryEpoch(), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
     
 
 class Res02mod0(Res02):
