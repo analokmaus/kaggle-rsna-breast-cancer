@@ -40,7 +40,7 @@ class PatientLevelDataset(D.Dataset):
         self.view_category = view_category
         self.replace = replace
         self.sample_criteria = sample_criteria
-        assert sample_criteria in ['high_value', 'low_value_for_implant', 'latest']
+        assert sample_criteria in ['high_value', 'low_value_for_implant', 'latest', 'valid_area']
         if mixup_params:
             assert 'alpha' in mixup_params.keys()
             self.mu = True
@@ -126,14 +126,21 @@ class PatientLevelDataset(D.Dataset):
             bbox = self._get_bbox(pid, iid)
             img = cv2.imread(str(img_path))
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            if self.sample_criteria == 'high_value':
+                score = img.mean()
+            elif self.sample_criteria == 'low_value_for_implant':
+                score = img.mean()
+                if is_implant:
+                    score = 1 / (score + 1e-4)
+            elif self.sample_criteria == 'valid_area':
+                score = ((16 < img) & (img < 160)).mean()
+                if is_implant:
+                    score = 1 / (score + 1e-4)
             bboxes.append(bbox)
-            scores.append(img.mean())
+            scores.append(score)
             images.append(img)
             iids.append(iid)
-        if is_implant and self.sample_criteria == 'low_value_for_implant':
-            score_idx = np.argsort(scores)
-        else:
-            score_idx = np.argsort(scores)[::-1]
+        score_idx = np.argsort(scores)[::-1]
         # print(f'{pid}/{[iids[idx] for idx in score_idx[:self.sample_num]][0]}.png')
         output_imgs = [self._process_img(images[idx], bboxes[idx]) for idx in score_idx[:self.sample_num]]
         return output_imgs, [iids[idx] for idx in score_idx[:self.sample_num]]

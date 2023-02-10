@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 from kuma_utils.metrics import MetricTemplate
 
 
@@ -106,4 +106,26 @@ class ContinuousAUC(MetricTemplate):
         if not np.isin(target, [0., 1.]).all():
             target = (target >= np.percentile(target, self.p)).astype(float)
         return roc_auc_score(target, approx)
-    
+
+
+class PRAUC(MetricTemplate):
+    '''
+    Area under PR curve
+    '''
+    def __init__(self, threshold_percentile=98.):
+        super().__init__(maximize=True)
+        self.p = threshold_percentile
+
+    def _test(self, target, approx):
+        if len(approx.shape) == 1:
+            approx = approx
+        elif approx.shape[1] == 1:
+            approx = approx.reshape(-1)
+        elif approx.shape[1] == 2:
+            approx = approx[:, 1]
+        else:
+            raise ValueError(f'Invalid approx shape: {approx.shape}')
+        if not np.isin(target, [0., 1.]).all():
+            target = (target >= np.percentile(target, self.p)).astype(float)
+        precision, recall, thresholds = precision_recall_curve(target.reshape(-1), approx)
+        return auc(recall, precision)

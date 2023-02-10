@@ -58,7 +58,7 @@ class Baseline:
     batch_scheduler = False
     criterion = BCEWithLogitsLoss()
     eval_metric = Pfbeta(binarize=True)
-    monitor_metrics = [AUC().torch, Pfbeta(binarize=False)]
+    monitor_metrics = [AUC().torch, PRAUC().torch, Pfbeta(binarize=False)]
     amp = True
     parallel = None
     deterministic = False
@@ -641,7 +641,7 @@ class Model04v5(Model04):
     optimizer_params = dict(lr=1e-5, weight_decay=1e-6)
     optimizer = optim.AdamW
     eval_metric = Pfbeta(average_both=True)
-    monitor_metrics = [AUC().torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    monitor_metrics = [AUC().torch, PRAUC().torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
 
 
 class Model04v6(Model04):
@@ -1104,7 +1104,7 @@ class Baseline4(Baseline): # Equivalent to Model05v3aug2, 4 fold cv
     optimizer_params = dict(lr=1e-5, weight_decay=1e-6)
     criterion = nn.BCEWithLogitsLoss()
     eval_metric = Pfbeta(average_both=True)
-    monitor_metrics = [AUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True),]
+    monitor_metrics = [AUC().torch, PRAUC().torch, Pfbeta(binarize=False),  Pfbeta(binarize=True),]
     parallel = 'ddp'
     callbacks = [
         EarlyStopping(patience=6, maximize=True, skip_epoch=5),
@@ -1289,7 +1289,7 @@ class Aug07v1(Aug07):
 class Aug07pl0(Aug07v1):
     name = 'aug_07_pl0'
     addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v1_soft.csv')
-    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    monitor_metrics = [ContinuousAUC(98.).torch, PRAUC().torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
 
 
 class Aug07pl0es0(Aug07pl0):
@@ -1308,9 +1308,42 @@ class Aug07pl1(Aug07pl0):
         bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
     )
     callbacks = [
-        CollectTopK(k=3), 
-        SaveAverageSnapshot(num_snapshot=3) # Save average of 3 best model
+        CollectTopK(3, maximize=True), 
+        SaveAverageSnapshot(num_snapshot=3)
     ]
+
+
+class Aug07pl1aug0(Aug07pl1):
+    name = 'aug_07_pl1_aug0'
+    dataset_params = dict(
+        sample_criteria='valid_area',
+        bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
+    )
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
 
 
 class Aug07pl2(Aug07pl1):
@@ -1369,7 +1402,7 @@ class Aug10(Baseline4):
 class Aug10es0(Aug10):
     name = 'aug_10_es0'
     eval_metric = AUC().torch
-    monitor_metrics = [Pfbeta(binarize=True), Pfbeta(binarize=False)]
+    monitor_metrics = [PRAUC().torch, Pfbeta(binarize=True), Pfbeta(binarize=False)]
 
 
 class Aug10es1(Aug10):
@@ -1677,6 +1710,42 @@ class Res02aug1(Res02Aux0):
     )
     callbacks = [
         SaveEveryEpoch(), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
+
+
+class Res02aug2(Res02Aux0):
+    name = 'res_02_aug2'
+    transforms = dict(
+        train=A.Compose([
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.ShiftScaleRotate(p=0.5),
+            # A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=10, val_shift_limit=10, p=0.7),
+            A.RandomBrightnessContrast(brightness_limit=(-0.2,0.2), contrast_limit=(-0.2, 0.2), p=0.7),
+            A.CLAHE(clip_limit=(1,4), p=0.5),
+            A.OneOf([
+                A.OpticalDistortion(distort_limit=1.0),
+                A.GridDistortion(num_steps=5, distort_limit=1.),
+                A.ElasticTransform(alpha=3),
+            ], p=0.2),
+            A.OneOf([
+                A.GaussNoise(var_limit=[10, 50]),
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.2),
+            A.PiecewiseAffine(p=0.2),
+            A.Sharpen(p=0.2),
+            A.CoarseDropout(max_holes=16, max_height=96, max_width=96, p=0.2),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2(),
+        ]),
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+    callbacks = [
+        CollectTopK(3, maximize=True), 
         SaveAverageSnapshot(num_snapshot=3)
     ]
     

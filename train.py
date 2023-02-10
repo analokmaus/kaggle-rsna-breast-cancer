@@ -254,12 +254,12 @@ if __name__ == "__main__":
 
         model = cfg.model(**cfg.model_params)
         checkpoint = torch.load(export_dir/f'fold{fold}.pt', 'cpu')
-        fit_state_dict(checkpoint['model'], model)
-        model.load_state_dict(checkpoint['model'])
         # clean up checkpoint
         if 'checkpoints' in checkpoint.keys():
             del checkpoint['checkpoints']
             torch.save(checkpoint, export_dir/f'fold{fold}.pt')
+        fit_state_dict(checkpoint['model'], model)
+        model.load_state_dict(checkpoint['model'])
         del checkpoint; gc.collect()
         if cfg.parallel == 'ddp':
             model = convert_sync_batchnorm(model)
