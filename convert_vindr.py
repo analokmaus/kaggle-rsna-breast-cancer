@@ -11,7 +11,7 @@ from joblib import Parallel, delayed
 from pydicom.pixel_data_handlers.util import apply_voi_lut
 
 
-IMG_SIZE = 2048
+IMG_SIZE = 3072
 VOI_LUT = True
 VINDR_DIR = Path('input/rsna-breast-cancer-detection/vindr_mammo/vindr-mammo-a-large-scale-benchmark-dataset-for-computer-aided-detection-and-diagnosis-in-full-field-digital-mammography-1.0.0')
 EXPORT_DIR = DATA_DIR/f'image_resized_{IMG_SIZE}{"V" if VOI_LUT else ""}'

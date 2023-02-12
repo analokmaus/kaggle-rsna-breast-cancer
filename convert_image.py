@@ -12,13 +12,13 @@ from pydicom.pixel_data_handlers import apply_windowing
 from pydicom.pixel_data_handlers.util import apply_voi_lut
 
 
-IMG_SIZE = 2048
+IMG_SIZE = 3072
 WINDOW = False
 VOI_LUT = True
 VOI_LUT_SIGONLY = True
 EXPORT_DIR = DATA_DIR/f'image_resized_{IMG_SIZE}{"V" if VOI_LUT else ""}{"S" if VOI_LUT_SIGONLY else ""}'
 EXPORT_DIR.mkdir(exist_ok=True)
-N_JOBS = 16
+N_JOBS = 40
 
 
 class ProgressParallel(Parallel):

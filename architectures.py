@@ -512,6 +512,33 @@ class MultiLevelModel(nn.Module):
         y_concat = self.concat_head(concat_features)
         return y_concat, y_global, y_local
 
+    
+class MultiLevelModel2(MultiLevelModel):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def forward(self, x): # (N x n_views x Ch x W x H)
+        bs = x.shape[0]
+        if self.num_view > 1:
+            x = self.squeeze_view(x)
+        global_features = self.global_encoder(x) # (Nn_views x Ch2 x W2 x H2)
+        global_cam= self.localizer(global_features) # (Nn_views x 1 x W2 x H2)
+        x2 = self.crop_roi(x, global_cam.sigmoid()) # (Nn_views x n_crop x 1 x Wl x Hl)
+        local_features = self.forward_mil(x2)
+        global_features = self.global_pool(global_features)
+        if self.num_view > 1:
+            local_features = local_features.view(bs, self.num_view, -1) # (N x n_views x Ch3)
+            global_features = global_features.view(bs, self.num_view, -1) # (N x n_views x Ch2)
+            y_global = y_global.view(bs, self.num_view, -1).mean(1)
+        concat_features = torch.concat([local_features, global_features], dim=2) # (bs x n_views x Ch2+Ch3)
+        if self.pool_view:
+            local_features = local_features.mean(1)
+            concat_features = concat_features.mean(1)
+        y_local = self.local_head(local_features)
+        y_concat = self.concat_head(concat_features)
+        return y_concat, y_local, global_cam
+
 
 class SegAssistModel(nn.Module):
     def __init__(self,

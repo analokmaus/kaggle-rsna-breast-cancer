@@ -1351,6 +1351,100 @@ class Aug07pl2(Aug07pl1):
     addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v1_soft_2575.csv')
 
 
+class Aug07pl2aug0(Aug07pl2):
+    name = 'aug_07_pl2_aug0'
+    eval_metric = PRAUC().torch
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    dataset_params = dict(
+        sample_criteria='valid_area',
+        bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
+    )
+    preprocess = dict(
+        train=A.Compose([
+            RandomCropBBox(buffer=(-50, 200)), 
+            AutoFlip(sample_width=100), A.Resize(1024, 512)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+
+
+class Aug07pl2aug1(Aug07pl2aug0):
+    name = 'aug_07_pl2_aug1'
+    preprocess = dict(
+        train=A.Compose([
+            A.OneOf([
+                RandomCropBBox2(buffer=(-50, 150), always_apply=False, p=0.75),
+                RandomCropROI2(threshold=(0.08, 0.12), buffer=(-50, 150), always_apply=False, p=0.25)], 
+                p=1.0
+            ),
+            AutoFlip(sample_width=100), A.Resize(1024, 512)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.1),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+
+
+class Aug07mod0(Aug07pl2aug0):
+    name = 'aug_07_mod0'
+    model_params = dict(
+        classification_model='convnext_base.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True)
+    batch_size = 8
+    optimizer_params = dict(lr=8e-6, weight_decay=1e-6)
+
+
 class Aug08(Aug07):
     name = 'aug_08'
     preprocess = dict(
@@ -1464,6 +1558,52 @@ class AuxLoss02pr0(AuxLoss02):
 class AuxLoss02v0(AuxLoss02):
     name = 'aux_02_v0'
     criterion = AuxLoss(loss_types=('bce', 'bce', 'bce'), weights=(2., 1., 1.))
+
+
+class AuxLoss02aug0(AuxLoss02v0):
+    name = 'aux_02_aug0'
+    dataset_params = dict(
+        aux_target_cols=['age', 'biopsy'],
+        sample_criteria='valid_area',
+        bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
+    )
+    preprocess = dict(
+        train=A.Compose([
+            RandomCropBBox(buffer=(-50, 200)), 
+            AutoFlip(sample_width=100), A.Resize(1024, 512)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+    callbacks = [
+        CollectTopK(3, maximize=True), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
 
 
 class AuxLoss03(AuxLoss00):
@@ -1748,7 +1888,68 @@ class Res02aug2(Res02Aux0):
         CollectTopK(3, maximize=True), 
         SaveAverageSnapshot(num_snapshot=3)
     ]
-    
+
+
+class Res02pl0pr0(Res02):
+    name = 'res_02_pl0_pr0'
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v1_soft_2575.csv')
+    weight_path = Path('results/pretrain_res02_vindr/nocv.pt')
+    eval_metric = PRAUC().torch
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    dataset_params = dict(
+        sample_criteria='valid_area',
+        bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
+    )
+    preprocess = dict(
+        train=A.Compose([
+            RandomCropBBox(buffer=(-20, 100)), 
+            AutoFlip(sample_width=100), A.Resize(1536, 768)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.25),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+    callbacks = [
+        CollectTopK(3, maximize=True), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
+
+
+class Res02pl0ds0(Res02pl0pr0):
+    name = 'res_02_pl0_ds0'
+    image_dir = Path('input/rsna-breast-cancer-detection/image_resized_3072V')
+    dataset_params = dict(
+        sample_criteria='valid_area')
+    preprocess = dict(
+        train=A.Compose([
+            AutoFlip(sample_width=200), RandomCropROI(buffer=(-20, 100)), A.Resize(1536, 768)]),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1536, 768)]),
+    )
+
 
 class Res02mod0(Res02):
     name = 'res_02_mod0'

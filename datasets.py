@@ -216,6 +216,22 @@ class PatientLevelDatasetDDSM(PatientLevelDataset):
         return self.image_dir/f'ddsm_{image_id}.png'
 
 
+class PatientLevelDatasetWithBBox(PatientLevelDataset):
+
+    def __init__(self):
+        super().__init__()
+
+    def get_mask(self, img, pdf):
+        mask = np.zeros((img.shape[0], img.shape[1], 3), dtype=np.float32)
+        img_h0, img_w0 = pdf[['height', 'width']].values[0]
+        img_h1, img_w1 = img.shape
+        for target, xmin, ymin, xmax, ymax in pdf.dropna(
+            subset=self.target_cols)[self.target_cols+['xmin', 'ymin', 'xmax', 'ymax']].values:
+            target_ch = int(target[-1]) - 3
+            mask[int(img_h1*(ymin/img_h0)):int(img_h1*(ymax/img_h0)), \
+                int(img_w1*(xmin/img_w0)):int(img_w1*(xmax/img_w0)), target_ch] = 1.0
+
+
 class ImageLevelDataset(D.Dataset):
     def __init__(
         self, df, image_dir, target_cols=['cancer'], metadata_cols=[], sep='/', 
