@@ -1,6 +1,5 @@
 from pathlib import Path
-from re import L
-
+import cv2
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
@@ -64,6 +63,7 @@ class Baseline:
     deterministic = False
     clip_grad = None
     max_grad_norm = 100
+    grad_accumulations = 1
     hook = TrainHook()
     callbacks = [
         EarlyStopping(patience=6, maximize=True, skip_epoch=0),
@@ -1145,7 +1145,8 @@ class Baseline4vindr(Baseline4):
 class Baseline4vindr2(Baseline4):
     name = 'pretrain_baseline4_vindr2'
     train_path = Path('input/rsna-breast-cancer-detection/vindr_train.csv')
-    image_dir = Path('input/rsna-breast-cancer-detection/vindr_mammo_resized_2048V')
+    # image_dir = Path('input/rsna-breast-cancer-detection/vindr_mammo_resized_2048V')
+    image_dir = Path('input/rsna-breast-cancer-detection/image_resized_2048V')
     num_epochs = 15
     model_params = dict(
         classification_model='convnext_small.fb_in22k_ft_in1k_384',
@@ -1165,6 +1166,48 @@ class Baseline4vindr2(Baseline4):
         SaveSnapshot()
     ]
     hook = AuxLossTrain()
+
+
+class Baseline4vindr2a(Baseline4vindr2):
+    name = 'pretrain_baseline4_vindr2a'
+    dataset_params = dict(
+        sample_criteria='valid_area',
+        bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
+        aux_target_cols=['density']
+    )
+    preprocess = dict(
+        train=A.Compose([
+            RandomCropBBox(buffer=(-20, 100)), 
+            AutoFlip(sample_width=100), A.Resize(1024, 512)], 
+            bbox_params=A.BboxParams(format='pascal_voc')),
+        test=A.Compose([AutoFlip(sample_width=200), CropROI(buffer=80), A.Resize(1024, 512)],
+            bbox_params=A.BboxParams(format='pascal_voc')),
+    )
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
 
 
 class Baseline4vindr3(Baseline4vindr):
@@ -1435,6 +1478,35 @@ class Aug07pl2aug1(Aug07pl2aug0):
     )
 
 
+class Aug07pl2aug2(Aug07pl2aug0):
+    name = 'aug_07_pl2_aug2'
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15, border_mode=cv2.BORDER_CONSTANT),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+
+
 class Aug07mod0(Aug07pl2aug0):
     name = 'aug_07_mod0'
     model_params = dict(
@@ -1442,7 +1514,16 @@ class Aug07mod0(Aug07pl2aug0):
         pretrained=True,
         spatial_pool=True)
     batch_size = 8
-    optimizer_params = dict(lr=8e-6, weight_decay=1e-6)
+    optimizer_params = dict(lr=2e-5, weight_decay=1e-6)
+    grad_accumulations = 2
+
+
+class Aug07mod1(Aug07pl2aug0):
+    name = 'aug_07_mod1'
+    model = MultiViewSiameseModel
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True)
 
 
 class Aug08(Aug07):
@@ -1628,6 +1709,51 @@ class AuxLoss04(AuxLoss00):
     criterion = AuxLoss(loss_types=('bce', 'bce'), weights=(2., 1.))
 
 
+class AuxLoss05(AuxLoss00):
+    name = 'aux_05'
+    train_path = Path('input/rsna-breast-cancer-detection/train_meta2.csv')
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True,
+        num_classes=5)
+    target_cols = ['cancer']
+    dataset_params = dict(
+        aux_target_cols=['age', 'biopsy', 'birads_pl', 'density_pl']
+    )
+    criterion = AuxLoss(loss_types=('bce', 'mse', 'bce', 'mse', 'mse'), weights=(4., 1., 1., 2., 1.))
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15, border_mode=cv2.BORDER_CONSTANT),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.1),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+    eval_metric = PRAUC().torch
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    callbacks = [
+        CollectTopK(3, maximize=True), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
+
+
 class Dataset03(Baseline4):
     name = 'dataset_03'
     group_col = 'machine_id'
@@ -1745,6 +1871,55 @@ class Model10v0(Model10):
         crop_num=8,
         pool_view=True
     )
+
+class Model11(Aug07):
+    name = 'model_11'
+    model = MultiLevelModel2
+    model_params = dict(
+        global_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=128,
+        crop_num=8,
+        pool_view=True
+    )
+    criterion = MultiLevelLoss2(weights=(3., 2., 1.))
+    dataset = PatientLevelDatasetWithFindingMask
+    dataset_params = dict(
+        sample_criteria='valid_area',
+        bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
+        mask_path='input/rsna-breast-cancer-detection/rsna-yolo-crop/vindr_001_baseline/det_result_vindr_001_baseline.csv',
+        mask_score=0.05,
+        mask_filter=True,
+    )
+    hook = MultiLevelTrain2()
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15, border_mode=0),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.2),
+            ToTensorV2(transpose_mask=True)
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2(transpose_mask=True)
+        ])
+    )
+    eval_metric = PRAUC().torch
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
 
 
 class Res02(Baseline4):

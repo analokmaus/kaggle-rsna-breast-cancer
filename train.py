@@ -198,6 +198,7 @@ if __name__ == "__main__":
             'deterministic': cfg.deterministic, 
             'clip_grad': cfg.clip_grad, 
             'max_grad_norm': cfg.max_grad_norm,
+            'grad_accumulations': cfg.grad_accumulations, 
             'random_state': cfg.seed,
             'logger': LOGGER,
             'progress_bar': opt.progress_bar, 

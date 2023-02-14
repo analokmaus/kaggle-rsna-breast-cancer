@@ -216,20 +216,113 @@ class PatientLevelDatasetDDSM(PatientLevelDataset):
         return self.image_dir/f'ddsm_{image_id}.png'
 
 
-class PatientLevelDatasetWithBBox(PatientLevelDataset):
+class PatientLevelDatasetWithFindingMask(PatientLevelDataset):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, df, image_dir, mask_path, mask_score=0.5, mask_filter=False, **kwargs):
+        super().__init__(df, image_dir, **kwargs)
+        if mask_path is None:
+            self.mask_dict = None
+        else:
+            self.mask_dict = {k: v for k, v in pd.read_csv(mask_path).dropna().query('score >= @mask_score').groupby('name')}
+        self.mask_filter = mask_filter
 
-    def get_mask(self, img, pdf):
-        mask = np.zeros((img.shape[0], img.shape[1], 3), dtype=np.float32)
-        img_h0, img_w0 = pdf[['height', 'width']].values[0]
-        img_h1, img_w1 = img.shape
-        for target, xmin, ymin, xmax, ymax in pdf.dropna(
-            subset=self.target_cols)[self.target_cols+['xmin', 'ymin', 'xmax', 'ymax']].values:
-            target_ch = int(target[-1]) - 3
-            mask[int(img_h1*(ymin/img_h0)):int(img_h1*(ymax/img_h0)), \
-                int(img_w1*(xmin/img_w0)):int(img_w1*(xmax/img_w0)), target_ch] = 1.0
+    def _get_mask(self, patient_id, image_id, img):
+        mask = np.zeros((img.shape[0], img.shape[1], 1), dtype=np.float32)
+        if self.mask_dict is not None:
+            key = f'{patient_id}/{image_id}.png'
+            if key in self.mask_dict.keys():
+                anno_df = self.mask_dict[key]
+            else:
+                return mask
+        else:
+            return mask
+        for xmin, ymin, xmax, ymax in anno_df[['xmin', 'ymin', 'xmax', 'ymax']].values:
+            if self.mask_filter:
+                roi = img[int(ymin):int(ymax), int(xmin):int(xmax)]
+                if roi.max() > 0:
+                    if roi[(roi > 5) & (roi < 200)].mean() < 0.5:
+                        continue
+                else:
+                    continue
+            mask[int(ymin):int(ymax), int(xmin):int(xmax)] = 1.0
+        return mask
+
+    def _process_img_mask(self, img, mask, bbox=None):
+        if self.preprocess:
+            if bbox is None:
+                t = self.preprocess(image=img, mask=mask)
+            else:
+                img_h, img_w = img.shape
+                bbox[2] = min(bbox[2], img_h)
+                bbox[3] = min(bbox[3], img_w)
+                t = self.preprocess(image=img, mask=mask, bboxes=[bbox])
+            img = t['image']
+            mask = t['mask']
+
+        if self.transforms:
+            t = self.transforms(image=img, mask=mask)
+            img = t['image']
+            mask = t['mask']
+            
+        return img, mask
+
+    def _load_image_mask(self, patient_id, image_id):
+        img_path = self._get_file_path(patient_id, image_id)
+        bbox = self._get_bbox(patient_id, image_id)
+        img = cv2.imread(str(img_path))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        mask = self._get_mask(patient_id, image_id, img)
+        return self._process_img_mask(img, mask, bbox)
+
+    def _load_data(self, idx):
+        pid = self.pids[idx]
+        pdf = self.df_dict[pid]
+        img = []
+        mask = []
+        for iv, view_cat in enumerate(self.view_category):
+            view0 = pdf.loc[pdf['view'].isin(view_cat)]
+            if len(view0) == 0:
+                img0 = []
+                mask0 = []
+            else:
+                if self.is_test:
+                    img0, iid = self._load_best_image(view0)
+                    mask0 = [torch.zeros_like(img, dtype=torch.float32) for img in img0]
+                else:
+                    view0 = view0.sample(min(self.sample_num, len(view0)))
+                    img0 = []
+                    mask0 = []
+                    for pid, iid in view0[['patient_id', 'image_id']].values:
+                        _img0, _mask0 = self._load_image_mask(pid, iid)
+                        img0.append(_img0)
+                        mask0.append(_mask0)
+            img.extend(img0)
+            mask.extend(mask0)
+        
+        img = torch.stack(img, dim=0)
+        mask = torch.stack(mask, dim=0)
+        assert img.shape[0] == mask.shape[0]
+        expected_dim = self.sample_num * len(self.view_category)
+        if img.shape[0] < expected_dim:
+            img = torch.concat(
+                [img, torch.zeros((expected_dim-img.shape[0], *img.shape[1:]), dtype=torch.float32)], dim=0)
+            mask = torch.concat(
+                [mask, torch.zeros((expected_dim-mask.shape[0], *mask.shape[1:]), dtype=torch.float32)], dim=0)
+
+        label = torch.from_numpy(pdf[self.target_cols+self.aux_target_cols].values[0].astype(np.float16))
+        
+        return img, mask, label
+
+    def __getitem__(self, idx):
+        img, mask, label = self._load_data(idx)
+
+        if self.mu:
+            raise NotImplementedError('mixup')
+
+        if self.rt_idx:
+            return img, mask, label, idx
+        else:
+            return img, mask, label
 
 
 class ImageLevelDataset(D.Dataset):

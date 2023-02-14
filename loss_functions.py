@@ -97,6 +97,26 @@ class MultiLevelLoss(nn.Module):
         return f'MultiLevel(weights={self.weights}, pos_weight={self.pos_weight})'
 
 
+class MultiLevelLoss2(nn.Module):
+    '''
+    weights: (float, float, float) # concat, local, cam
+    '''
+    def __init__(self, weights=(1., 1., 1.), pos_weight=None):
+        super().__init__()
+        self.weights = weights
+
+    def forward(self, inputs, target, target_cam):
+        loss = self.weights[0] * binary_cross_entropy_with_logits(inputs[0], target)
+        loss += self.weights[1] * binary_cross_entropy_with_logits(inputs[1], target)
+        if inputs[2].shape[2:] != target_cam.shape[2:]:
+            target_cam = F.interpolate(target_cam, size=inputs[2].shape[2:], mode="nearest")
+        loss += self.weights[2] * F.mse_loss(inputs[2], target_cam)
+        return loss / sum(self.weights)
+    
+    def __repr__(self):
+        return f'MultiLevel2(weights={self.weights})'
+
+
 class AuxLoss(nn.Module):
     '''
     '''

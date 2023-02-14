@@ -30,6 +30,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default='Baseline',
                         help="config name in configs.py")
+    parser.add_argument("--dataset", type=str, default='vindr',
+                        help="vindr or rsna")
     parser.add_argument("--only_fold", type=int, default=-1,
                         help="train only specified fold")
     parser.add_argument("--num_workers", type=int, default=0)
@@ -85,7 +87,10 @@ if __name__ == "__main__":
     '''
     Prediction and calibration
     '''
-    test = pd.read_csv('input/rsna-breast-cancer-detection/vindr_train.csv')
+    if opt.dataset == 'vindr':
+        test = pd.read_csv('input/rsna-breast-cancer-detection/vindr_train.csv')
+    elif opt.dataset == 'rsna':
+        test = pd.read_csv('input/rsna-breast-cancer-detection/train_meta.csv')
     predictions = []
     cfg.dataset_params['aux_target_cols'] = []
     test_data = cfg.dataset(
@@ -99,16 +104,41 @@ if __name__ == "__main__":
         test_data, batch_size=cfg.batch_size, shuffle=False,
         num_workers=opt.num_workers, pin_memory=True)
 
-    for fold in range(cfg.cv):
+    model_paths = list(export_dir.glob('fold*.pt'))
 
-        if not (export_dir/f'fold{fold}.pt').exists():
-            LOGGER(f'fold{fold}.pt missing. No target to predict.')
-            continue
+    if len(model_paths) > 0:
+        for fold in range(cfg.cv):
+            if not (export_dir/f'fold{fold}.pt').exists():
+                LOGGER(f'fold{fold}.pt missing. No target to predict.')
+                continue
 
-        LOGGER(f'===== INFERENCE FOLD {fold} =====')
+            LOGGER(f'===== INFERENCE FOLD {fold} =====')
 
+            model = cfg.model(**cfg.model_params)
+            checkpoint = torch.load(export_dir/f'fold{fold}.pt', 'cpu')
+            fit_state_dict(checkpoint['model'], model)
+            model.load_state_dict(checkpoint['model'])
+            if cfg.parallel == 'ddp':
+                model = convert_sync_batchnorm(model)
+                inference_parallel = 'dp'
+                test_loader = D.DataLoader(
+                    test_data, batch_size=cfg.batch_size*4, shuffle=False,
+                    num_workers=opt.num_workers, pin_memory=True)
+            else:
+                inference_parallel = None
+
+            trainer = TorchTrainer(model, serial=f'fold{fold}', device=opt.gpu)
+            trainer.logger = LOGGER
+            trainer.register(hook=cfg.hook, callbacks=cfg.callbacks)
+            pred_logits = trainer.predict(test_loader, parallel=inference_parallel, progress_bar=opt.progress_bar)
+            predictions.append(sigmoid(pred_logits))
+            torch.cuda.empty_cache()
+        predictions = np.stack(predictions, axis=0)
+
+    else:
+        LOGGER(f'===== INFERENCE =====')
         model = cfg.model(**cfg.model_params)
-        checkpoint = torch.load(export_dir/f'fold{fold}.pt', 'cpu')
+        checkpoint = torch.load(export_dir/f'nocv.pt', 'cpu')
         fit_state_dict(checkpoint['model'], model)
         model.load_state_dict(checkpoint['model'])
         if cfg.parallel == 'ddp':
@@ -120,16 +150,18 @@ if __name__ == "__main__":
         else:
             inference_parallel = None
 
-        trainer = TorchTrainer(model, serial=f'fold{fold}', device=opt.gpu)
+        trainer = TorchTrainer(model, serial=f'nocv', device=opt.gpu)
         trainer.logger = LOGGER
+        if cfg.hook.__class__.__name__ == 'AuxLossTrain':
+            cfg.hook.return_aux = True
         trainer.register(hook=cfg.hook, callbacks=cfg.callbacks)
         pred_logits = trainer.predict(test_loader, parallel=inference_parallel, progress_bar=opt.progress_bar)
-        predictions.append(sigmoid(pred_logits))
+        predictions = pred_logits
         torch.cuda.empty_cache()
-    predictions = np.stack(predictions, axis=0)
-    
-    with open(str(export_dir/'predictions_vindr.pickle'), 'wb') as f:
+
+    with open(str(export_dir/f'predictions_{opt.dataset}.pickle'), 'wb') as f:
         pickle.dump({
             'predictions': predictions
         }, f)
     
+    LOGGER(f'===== ENDE =====')

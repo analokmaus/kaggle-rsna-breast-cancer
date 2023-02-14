@@ -41,8 +41,9 @@ class AuxLossTrain(SimpleHook):
     '''
     '''
 
-    def __init__(self, evaluate_in_batch=False):
+    def __init__(self, evaluate_in_batch=False, return_aux=False):
         super().__init__(evaluate_in_batch=evaluate_in_batch)
+        self.return_aux = return_aux
     
     def forward_train(self, trainer, inputs):
         targets = inputs[-1]
@@ -60,7 +61,10 @@ class AuxLossTrain(SimpleHook):
 
     def forward_test(self, trainer, inputs):
         approxs = trainer.model(*inputs[:-1])
-        return approxs[:, 0].view(-1, 1)
+        if self.return_aux:
+            return approxs
+        else:
+            return approxs[:, 0].view(-1, 1)
 
     def __repr__(self) -> str:
         return f'AuxLossTrain()'
@@ -77,6 +81,36 @@ class MultiLevelTrain(SimpleHook):
         target = inputs[-1]
         approx0, approx1, approx2 = trainer.model(inputs[0])
         loss = trainer.criterion((approx0, approx1, approx2), target)
+        return loss, approx0.detach()
+
+    forward_valid = forward_train
+
+    def forward_test(self, trainer, inputs):
+        approx, _, _ = trainer.model(inputs[0])
+        return approx
+
+    def __repr__(self) -> str:
+        return f'MultiLevelTrain()'
+
+
+class MultiLevelTrain2(SimpleHook):
+    '''
+    '''
+
+    def __init__(self, evaluate_in_batch=False):
+        super().__init__(evaluate_in_batch=evaluate_in_batch)
+
+    def evaluate_batch(self, trainer, inputs, approx):
+        pass
+    
+    def forward_train(self, trainer, inputs):
+        input_t, mask_t, target = inputs
+        bs, n_view, ch, h, w = mask_t.shape
+        approx0, approx1, global_cam = trainer.model(input_t)
+        loss = trainer.criterion((approx0, approx1, global_cam), target, mask_t.view(bs*n_view, ch, h, w))
+        storage = trainer.epoch_storage
+        storage['approx'].append(approx0.detach())
+        storage['target'].append(target)
         return loss, approx0.detach()
 
     forward_valid = forward_train

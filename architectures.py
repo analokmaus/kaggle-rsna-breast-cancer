@@ -530,7 +530,6 @@ class MultiLevelModel2(MultiLevelModel):
         if self.num_view > 1:
             local_features = local_features.view(bs, self.num_view, -1) # (N x n_views x Ch3)
             global_features = global_features.view(bs, self.num_view, -1) # (N x n_views x Ch2)
-            y_global = y_global.view(bs, self.num_view, -1).mean(1)
         concat_features = torch.concat([local_features, global_features], dim=2) # (bs x n_views x Ch2+Ch3)
         if self.pool_view:
             local_features = local_features.mean(1)
