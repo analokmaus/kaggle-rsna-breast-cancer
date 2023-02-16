@@ -58,7 +58,7 @@ class Pfbeta(nn.Module):
 
     def forward(self, approx, target):
         if isinstance(approx, torch.Tensor):
-            approx = approx.sigmoid().detach().cpu().numpy()
+            approx = approx.float().sigmoid().detach().cpu().numpy()
             target = target.detach().cpu().numpy()
         if self.avg_both:
             f1s, thres = self.optimal_f1(target, approx)

@@ -1482,7 +1482,7 @@ class Aug07pl2aug2(Aug07pl2aug0):
     name = 'aug_07_pl2_aug2'
     transforms = dict(
         train=A.Compose([
-            A.ShiftScaleRotate(0.1, 0.2, 15, border_mode=cv2.BORDER_CONSTANT),
+            A.ShiftScaleRotate(0.1, 0.2, 45, border_mode=cv2.BORDER_CONSTANT, value=0),
             A.VerticalFlip(p=0.5),
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
@@ -1505,6 +1505,39 @@ class Aug07pl2aug2(Aug07pl2aug0):
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
         ])
     )
+
+
+class Aug07pl2mod0(Aug07pl2aug2):
+    name = 'aug_07_pl2_mod0'
+    model = MultiViewSiameseModel
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True)
+
+
+class SiteAug07pl2aug2(Aug07pl2aug2):
+    name = 'site_aug_07_pl2_aug2'
+    num_epochs = 5
+    optimizer_params = dict(lr=5e-6, weight_decay=1e-6)
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 15, border_mode=cv2.BORDER_CONSTANT, value=0),
+            A.VerticalFlip(p=0.1),
+            A.HorizontalFlip(p=0.1),
+            A.RandomBrightnessContrast(0.1, 0.1, p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+    callbacks = [
+        # CollectTopK(2, maximize=True), 
+        SaveEveryEpoch(),
+        SaveAverageSnapshot(num_snapshot=2)
+    ]
+    weight_path = Path('results/aug_07_pl2_aug2/')
 
 
 class Aug07mod0(Aug07pl2aug0):
@@ -1740,6 +1773,52 @@ class AuxLoss05(AuxLoss00):
             ], p=0.25),
             A.Normalize(mean=0.485, std=0.229, always_apply=True), 
             A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+    eval_metric = PRAUC().torch
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    callbacks = [
+        CollectTopK(3, maximize=True), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
+
+
+class AuxLoss06(AuxLoss00):
+    name = 'aux_06'
+    train_path = Path('input/rsna-breast-cancer-detection/train_meta_ishikei.csv')
+    model_params = dict(
+        classification_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True,
+        num_classes=7)
+    target_cols = ['cancer']
+    dataset_params = dict(
+        aux_target_cols=['biopsy', 'b0', 'b1', 'b2', 'b3', 'b4']
+    )
+    criterion = AuxLoss(loss_types=('bce', 'bce', 'bce', 'bce', 'bce', 'bce', 'bce'), weights=(6., 1., 1., 1., 1., 1., 1.))
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 45, border_mode=cv2.BORDER_CONSTANT, value=0),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
             ToTensorV2()
         ]), 
         test=A.Compose([
@@ -2140,3 +2219,25 @@ class Res02mod0(Res02):
         pretrained=True)
     hook = LRTrain()
     batch_size = 8
+
+
+class Distillation00(Aug07pl2aug2):
+    name = 'distil_00'
+    teach_configs = [Aug07, Aug07pl2aug2, AuxLoss03]
+    num_epochs = 10
+    hook = Distillation()
+    inference_hook = Aug07pl2aug2.hook
+    criterion = nn.MSELoss()
+    eval_metric = PRAUC().torch
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    callbacks = [
+        CollectTopK(2, maximize=True), 
+        SaveAverageSnapshot(num_snapshot=2)
+    ]
+    batch_size = 16
+
+class Distillation00a(Distillation00):
+    name = 'distil_00_a'
+    num_epochs = 5
+    weight_path = Path('results/distil_00/')
+    

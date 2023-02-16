@@ -25,6 +25,7 @@ from configs import *
 from utils import print_config, notify_me
 from metrics import Pfbeta
 from training_extras import extend_df
+from architectures import DistillationModel
 
 
 def oversample_data(df, n_times=0):
@@ -166,7 +167,17 @@ if __name__ == "__main__":
             valid_data, batch_size=cfg.batch_size, shuffle=False,
             num_workers=opt.num_workers, pin_memory=True)
 
-        model = cfg.model(**cfg.model_params)
+        teacher_models = []
+        for t_cfg in cfg.teach_configs:
+            model = t_cfg.model(**t_cfg.model_params)
+            weight_path = Path(f'results/{t_cfg.name}/fold{fold}.pt')
+            weight = torch.load(weight_path, 'cpu')['model']
+            model.load_state_dict(weight, strict=False)
+            teacher_models.append(model)
+            LOGGER(f'teacher model: {t_cfg.name} loaded')
+        
+        student_model = cfg.model(**cfg.model_params)
+        model = DistillationModel(teacher_models=teacher_models, student_model=student_model)
 
         # Load snapshot
         if cfg.weight_path is not None:
@@ -258,16 +269,26 @@ if __name__ == "__main__":
         valid_loader = D.DataLoader(
             valid_data, batch_size=cfg.batch_size, shuffle=False,
             num_workers=opt.num_workers, pin_memory=True)
-
-        model = cfg.model(**cfg.model_params)
+    
+        teacher_models = []
+        for t_cfg in cfg.teach_configs:
+            model = t_cfg.model(**t_cfg.model_params)
+            teacher_models.append(model)
+        model = DistillationModel(
+            teacher_models=teacher_models,
+            student_model=cfg.model(**cfg.model_params))
+        
         checkpoint = torch.load(export_dir/f'fold{fold}.pt', 'cpu')
+        fit_state_dict(checkpoint['model'], model)
+        model.load_state_dict(checkpoint['model'])
         # clean up checkpoint
         if 'checkpoints' in checkpoint.keys():
             del checkpoint['checkpoints']
-            torch.save(checkpoint, export_dir/f'fold{fold}.pt')
-        fit_state_dict(checkpoint['model'], model)
-        model.load_state_dict(checkpoint['model'])
+        model = model.student
+        checkpoint['model'] = model.state_dict()
+        torch.save(checkpoint, export_dir/f'fold{fold}.pt')
         del checkpoint; gc.collect()
+
         if cfg.parallel == 'ddp':
             model = convert_sync_batchnorm(model)
             inference_parallel = 'dp'
@@ -279,7 +300,7 @@ if __name__ == "__main__":
 
         trainer = TorchTrainer(model, serial=f'fold{fold}', device=opt.gpu)
         trainer.logger = LOGGER
-        trainer.register(hook=cfg.hook, callbacks=cfg.callbacks)
+        trainer.register(hook=cfg.inference_hook, callbacks=cfg.callbacks)
         pred_logits = trainer.predict(valid_loader, parallel=inference_parallel, progress_bar=opt.progress_bar)
         target_fold = valid_data.get_labels()
         valid_sites = [valid_data.df_dict[valid_data.pids[i]]['site_id'].values[0] for i in range(len(valid_data))]

@@ -6,6 +6,37 @@ from kuma_utils.torch.hooks import SimpleHook
 from kuma_utils.torch.callbacks import CallbackTemplate
 
 
+def extend_df(df, max_record_per_patient=2, view_category=[['MLO', 'LMO', 'LM', 'ML'], ['CC', 'AT']]):
+    '''
+    Extend the train df to include multiple images
+    '''
+    def _sample_idx(df, used_ids=[], sample_all=False):
+        new_pdf = []
+        for iv, view_cat in enumerate(view_category):
+            view0 = pdf.loc[pdf['view'].isin(view_cat) & ~pdf['image_id'].isin(used_ids)]
+            if len(view0) == 0:
+                new_pdf.append(pdf.loc[pdf['view'].isin(view_cat)])
+            elif sample_all:
+                new_pdf.append(view0)
+            else:
+                new_pdf.append(view0.sample(min(len(view0), max(1, len(view0)//max_record_per_patient))))
+        return pd.concat(new_pdf).reset_index(drop=True)
+
+    new_df = []
+    for plr, pdf in df.groupby(['patient_id', 'laterality']):
+        if len(pdf) == 2:
+            pdf['oversample_id'] = 0
+            new_df.append(pdf)
+        else:
+            used_ids = []
+            for i in range(max_record_per_patient):
+                idf = _sample_idx(pdf, used_ids, sample_all=i == max_record_per_patient-1)
+                idf['oversample_id'] = i
+                new_df.append(idf)
+                used_ids.extend(idf['image_id'].values.tolist())
+    return pd.concat(new_df).reset_index(drop=True)
+
+
 class MixupTrain(SimpleHook):
 
     def __init__(self, evaluate_in_batch=False, alpha=0.4, hard_label=False, lor_label=False):
@@ -215,6 +246,35 @@ class LRTrain(SimpleHook):
 
     def __repr__(self) -> str:
         return f'LRTrain()'
+    
+
+class Distillation(SimpleHook):
+    '''
+    '''
+
+    def __init__(self, evaluate_in_batch=False):
+        super().__init__(evaluate_in_batch=evaluate_in_batch)
+
+    def evaluate_batch(self, trainer, inputs, approx):
+        pass
+
+    def forward_train(self, trainer, inputs):
+        input_t, target = inputs
+        approx_student, approx_teacher = trainer.model(input_t)
+        loss = trainer.criterion(approx_student, approx_teacher)
+        storage = trainer.epoch_storage
+        storage['approx'].append(approx_student.detach())
+        storage['target'].append(target)
+        return loss, approx_student.detach()
+
+    forward_valid = forward_train
+
+    def forward_test(self, trainer, inputs):
+        approx, _ = trainer.model(inputs[0]) 
+        return approx
+
+    def __repr__(self) -> str:
+        return f'Distillation()'
 
 
 class StepDataset(CallbackTemplate):
