@@ -177,8 +177,6 @@ if __name__ == "__main__":
             LOGGER(f'teacher model: {t_cfg.name} loaded')
         
         student_model = cfg.model(**cfg.model_params)
-        model = DistillationModel(teacher_models=teacher_models, student_model=student_model)
-
         # Load snapshot
         if cfg.weight_path is not None:
             if cfg.weight_path.is_dir():
@@ -187,9 +185,11 @@ if __name__ == "__main__":
                 weight_path = cfg.weight_path
             LOGGER(f'{weight_path} loaded.')
             weight = torch.load(weight_path, 'cpu')['model']
-            fit_state_dict(weight, model)
-            model.load_state_dict(weight, strict=False)
+            fit_state_dict(weight, student_model)
+            student_model.load_state_dict(weight, strict=False)
             del weight; gc.collect()
+
+        model = DistillationModel(teacher_models=teacher_models, student_model=student_model)
 
         optimizer = cfg.optimizer(model.parameters(), **cfg.optimizer_params)
         scheduler = cfg.scheduler(optimizer, **cfg.scheduler_params)

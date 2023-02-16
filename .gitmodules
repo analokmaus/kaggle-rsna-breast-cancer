@@ -10,3 +10,6 @@
 [submodule "segmentation_models.pytorch"]
 	path = segmentation_models.pytorch
 	url = https://github.com/qubvel/segmentation_models.pytorch.git
+[submodule "global_objectives_pytorch"]
+	path = global_objectives_pytorch
+	url = https://github.com/Shlomix/global_objectives_pytorch.git

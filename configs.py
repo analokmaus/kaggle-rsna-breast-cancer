@@ -24,6 +24,7 @@ from metrics import *
 from transforms import *
 from architectures import *
 from training_extras import *
+from global_objectives.losses import AUCPRLoss, PRLoss, TPRFPRLoss
 
 
 class Baseline:
@@ -1507,14 +1508,6 @@ class Aug07pl2aug2(Aug07pl2aug0):
     )
 
 
-class Aug07pl2mod0(Aug07pl2aug2):
-    name = 'aug_07_pl2_mod0'
-    model = MultiViewSiameseModel
-    model_params = dict(
-        classification_model='convnext_small.fb_in22k_ft_in1k_384',
-        pretrained=True)
-
-
 class SiteAug07pl2aug2(Aug07pl2aug2):
     name = 'site_aug_07_pl2_aug2'
     num_epochs = 5
@@ -1557,6 +1550,61 @@ class Aug07mod1(Aug07pl2aug0):
     model_params = dict(
         classification_model='convnext_small.fb_in22k_ft_in1k_384',
         pretrained=True)
+    
+
+class Aug07lr0(Aug07):
+    name = 'aug_07_lr0'
+    criterion = AUCPRLoss()
+    transforms = dict(
+        train=A.Compose([
+            A.ShiftScaleRotate(0.1, 0.2, 45, border_mode=cv2.BORDER_CONSTANT, value=0),
+            A.VerticalFlip(p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
+            A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+                A.GridDistortion(),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), 
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
+            ToTensorV2()
+        ]), 
+        test=A.Compose([
+            A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2()
+        ])
+    )
+    callbacks = [
+        CollectTopK(3, maximize=True), 
+        SaveAverageSnapshot(num_snapshot=3)
+    ]
+    eval_metric = PRAUC().torch
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    dataset_params = dict(
+        sample_criteria='valid_area',
+        bbox_path='input/rsna-breast-cancer-detection/bbox_all.csv',
+    )
+
+
+class Aug07lr1(Aug07lr0):
+    name = 'aug_07_lr1'
+    criterion = FocalLoss()
+
+
+class Aug07lr2(Aug07lr0):
+    name = 'aug_07_lr2'
+    criterion = PRLoss(target_recall=0.5)
+
+
+class Aug07lr3(Aug07lr0):
+    name = 'aug_07_lr3'
+    criterion = TPRFPRLoss(target_fpr=0.25)
 
 
 class Aug08(Aug07):
@@ -2236,8 +2284,18 @@ class Distillation00(Aug07pl2aug2):
     ]
     batch_size = 16
 
+
 class Distillation00a(Distillation00):
     name = 'distil_00_a'
     num_epochs = 5
     weight_path = Path('results/distil_00/')
     
+
+class Distillation01(Distillation00):
+    name = 'distil_01'
+    num_epochs = 15
+    teach_configs = [Aug07, Aug07pl2aug2, AuxLoss03]
+    model_params = dict(
+        classification_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        spatial_pool=True)

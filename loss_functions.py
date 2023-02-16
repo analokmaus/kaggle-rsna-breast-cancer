@@ -174,4 +174,3 @@ class NegativeContrastiveLoss(nn.Module):
             + (label) * torch.pow(torch.clamp(self.margin - dist, min=0.0), 2)
         loss = torch.mean(loss)
         return loss
-    
