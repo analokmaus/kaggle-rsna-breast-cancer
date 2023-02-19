@@ -149,33 +149,41 @@ class SegBaseline(Baseline4):
     train_path = Path('input/rsna-breast-cancer-detection/vindr_findings.csv')
     model = smp.Unet
     model_params = dict(
-        # encoder_name="convnext_small",
-        encoder_name="resnet200d",
+        encoder_name="convnext_tiny",
         encoder_weights="imagenet",
         in_channels=1,
         classes=3,
     )
     transforms = dict(
         train=A.Compose([
-            A.ShiftScaleRotate(rotate_limit=30),
+            A.ShiftScaleRotate(0.1, 0.2, 45, border_mode=cv2.BORDER_CONSTANT, value=0),
             A.VerticalFlip(p=0.5),
             A.HorizontalFlip(p=0.5),
-            A.RandomBrightnessContrast(0.1, 0.1, p=0.5),
+            A.RandomBrightnessContrast(0.3, 0.3, p=0.5),
             A.OneOf([
+                A.GaussianBlur(),
+                A.MotionBlur(),
+                A.MedianBlur(),
+            ], p=0.25),
+            A.CLAHE(p=0.1), 
+            A.OneOf([
+                A.ElasticTransform(alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
                 A.GridDistortion(),
-                A.OpticalDistortion(),
-            ], p=0.1),
+                A.OpticalDistortion(distort_limit=2, shift_limit=0.5),
+            ], p=0.25),
             A.Normalize(mean=0.485, std=0.229, always_apply=True), 
-            # A.CoarseDropout(max_holes=16, max_height=64, max_width=64, p=0.2),
+            A.CoarseDropout(max_holes=20, max_height=64, max_width=64, p=0.2),
             ToTensorV2(transpose_mask=True)
         ]), 
         test=A.Compose([
             A.Normalize(mean=0.485, std=0.229, always_apply=True), ToTensorV2(transpose_mask=True)
         ])
     )
-    criterion = smp.losses.FocalLoss(mode='multilabel')
+    criterion = smp.losses.DiceLoss(mode='multilabel')
     eval_metric = IoU(threshold=0.5)
     monitor_metrics = []
-    encoder_lr = 2e-4
-    optimizer_params = dict(lr=2e-4, weight_decay=1e-6)
+    encoder_lr = 1e-5
+    optimizer_params = dict(lr=1e-4, weight_decay=1e-6)
     hook = TrainHook(evaluate_in_batch=True)
+    num_epochs = 15
+

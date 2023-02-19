@@ -443,7 +443,7 @@ class MultiLevelModel(nn.Module):
         self.num_view = num_view
         self.pool_view = pool_view
 
-    def crop_roi(self, x, cam): # current implementation is for 1 class only
+    def retrieve_roi(self, x, cam): # current implementation is for 1 class only
         crop_size = self.crop_size
         crop_num = self.crop_num
         bs, ch, h0, w0 = x.shape
@@ -491,13 +491,24 @@ class MultiLevelModel(nn.Module):
         x = x.view(bs*self.num_view, ch, w, h)
         return x
 
+    def get_global_cam(self, x, return_roi=False): # for debug
+        bs = x.shape[0]
+        if self.num_view > 1:
+            x = self.squeeze_view(x)
+        global_features = self.global_encoder(x) # (Nn_views x Ch2 x W2 x H2)
+        global_cam = self.localizer(global_features) # (Nn_views x 1 x W2 x H2)
+        if return_roi:
+            return global_cam.sigmoid(), self.retrieve_roi(x, global_cam.sigmoid())
+        else:
+            return global_cam.sigmoid()
+
     def forward(self, x): # (N x n_views x Ch x W x H)
         bs = x.shape[0]
         if self.num_view > 1:
             x = self.squeeze_view(x)
         global_features = self.global_encoder(x) # (Nn_views x Ch2 x W2 x H2)
-        global_cam= self.localizer(global_features) # (Nn_views x 1 x W2 x H2)
-        x2 = self.crop_roi(x, global_cam.sigmoid()) # (Nn_views x n_crop x 1 x Wl x Hl)
+        global_cam = self.localizer(global_features) # (Nn_views x 1 x W2 x H2)
+        x2 = self.retrieve_roi(x, global_cam.sigmoid()) # (Nn_views x n_crop x 1 x Wl x Hl)
         local_features = self.forward_mil(x2)
         global_features = self.global_pool(global_features)
         y_global = self.aggregate_cam(global_cam)
@@ -516,28 +527,35 @@ class MultiLevelModel(nn.Module):
     
 class MultiLevelModel2(MultiLevelModel):
 
-    def __init__(self, **kwargs):
+    def __init__(self, model_scale=32, **kwargs):
         super().__init__(**kwargs)
+        self.model_scale = model_scale
+        self.roi_k = self.crop_size//self.model_scale
+        self.roi_conv = nn.Conv2d(1, 1, kernel_size=self.roi_k, stride=1, padding=0, bias=False)
+        self.roi_conv.weight = nn.Parameter(torch.ones_like(self.roi_conv.weight), requires_grad=False)
 
-    def forward(self, x): # (N x n_views x Ch x W x H)
-        bs = x.shape[0]
-        if self.num_view > 1:
-            x = self.squeeze_view(x)
-        global_features = self.global_encoder(x) # (Nn_views x Ch2 x W2 x H2)
-        global_cam= self.localizer(global_features) # (Nn_views x 1 x W2 x H2)
-        x2 = self.crop_roi(x, global_cam.sigmoid()) # (Nn_views x n_crop x 1 x Wl x Hl)
-        local_features = self.forward_mil(x2)
-        global_features = self.global_pool(global_features)
-        if self.num_view > 1:
-            local_features = local_features.view(bs, self.num_view, -1) # (N x n_views x Ch3)
-            global_features = global_features.view(bs, self.num_view, -1) # (N x n_views x Ch2)
-        concat_features = torch.concat([local_features, global_features], dim=2) # (bs x n_views x Ch2+Ch3)
-        if self.pool_view:
-            local_features = local_features.mean(1)
-            concat_features = concat_features.mean(1)
-        y_local = self.local_head(local_features)
-        y_concat = self.concat_head(concat_features)
-        return y_concat, y_local, global_cam
+    def retrieve_roi(self, img, cam):
+        cam2 = cam.detach().clone()
+        roi_centers = {i: [] for i in range(img.shape[0])}
+        _, _, ch, cw = cam.shape
+        for _ in range(self.crop_num):
+            cam_conv = self.roi_conv(cam2)
+            flat_indices = cam_conv.flatten(start_dim=2).argmax(2)
+            max_indices = [divmod(idx.item(), cam_conv.shape[-1]) for idx in flat_indices]
+            for i, (cy, cx) in enumerate(max_indices):
+                ymin, ymax, xmin, xmax = cy, cy+self.roi_k, cx, cx+self.roi_k
+                cam2[i, 0, ymin:ymax, xmin:xmax] = 0
+                roi_centers[i].append([(cy+self.roi_k//2)/ch, (cx+self.roi_k//2)/cw])
+        img_roi = []
+        _, _, h, w = img.shape
+        for i, centers in roi_centers.items():
+            img_roi.append(
+                torch.stack([
+                img[i, :, 
+                    int(h*cy)-self.crop_size//2:int(h*cy)+self.crop_size//2, 
+                    int(w*cx)-self.crop_size//2:int(w*cx)+self.crop_size//2] for cy, cx in centers], dim=0))
+        img_roi = torch.stack(img_roi, dim=0)
+        return img_roi
 
 
 class DistillationModel(nn.Module):

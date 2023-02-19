@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from global_objectives.losses import AUCPRLoss
 
 
 def binary_cross_entropy(inputs, target, weight=None, reduction='mean', smooth_eps=None, from_logits=False):
@@ -81,11 +82,14 @@ class MultiLevelLoss(nn.Module):
     '''
     weights: (float, float, float) # concat, global, local
     '''
-    def __init__(self, weights=(1., 1., 1.), pos_weight=None):
+    def __init__(self, weights=(1., 1., 1.), pos_weight=None, loss_type='bce'):
         super().__init__()
         self.weights = weights
         self.pos_weight = pos_weight
-        self.loss = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
+        if loss_type == 'bce':
+            self.loss = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
+        elif loss_type == 'aucpr':
+            self.loss = AUCPRLoss()
     
     def forward(self, inputs, target):
         loss = 0
@@ -124,7 +128,8 @@ class AuxLoss(nn.Module):
         super().__init__()
         loss_dict = {
             'bce': binary_cross_entropy_with_logits,
-            'mse': F.mse_loss
+            'mse': F.mse_loss,
+            'aucpr': AUCPRLoss(),
         }
         self.loss_types = loss_types
         self.weights = weights
@@ -146,7 +151,8 @@ class ResizedSegLoss(nn.Module):
         super().__init__()
         loss_dict = {
             'bce': binary_cross_entropy_with_logits,
-            'mse': F.mse_loss
+            'mse': F.mse_loss,
+            'aucpr': AUCPRLoss(),
         }
         self.loss = loss_dict[loss_type]
         self.loss_type = loss_type
