@@ -107,18 +107,24 @@ class MultiLevelTrain(SimpleHook):
 
     def __init__(self, evaluate_in_batch=False):
         super().__init__(evaluate_in_batch=evaluate_in_batch)
+
+    def evaluate_batch(self, trainer, inputs, approx):
+        pass
     
     def forward_train(self, trainer, inputs):
         target = inputs[-1]
         approx0, approx1, approx2 = trainer.model(inputs[0])
         loss = trainer.criterion((approx0, approx1, approx2), target)
-        return loss, approx0.detach()
+        storage = trainer.epoch_storage
+        storage['approx'].append(approx0[:, 0].view(-1, 1).detach())
+        storage['target'].append(target[:, 0].view(-1, 1).detach())
+        return loss, approx0[:, 0].view(-1, 1).detach()
 
     forward_valid = forward_train
 
     def forward_test(self, trainer, inputs):
         approx, _, _ = trainer.model(inputs[0])
-        return approx
+        return approx[:, 0].view(-1, 1)
 
     def __repr__(self) -> str:
         return f'MultiLevelTrain()'

@@ -90,6 +90,8 @@ class MultiLevelLoss(nn.Module):
             self.loss = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
         elif loss_type == 'aucpr':
             self.loss = AUCPRLoss()
+        else:
+            self.loss = loss_type
     
     def forward(self, inputs, target):
         loss = 0

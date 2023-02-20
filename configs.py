@@ -2156,6 +2156,56 @@ class Model13(Aug07lr0):
     optimizer_params = dict(lr=3e-5, weight_decay=1e-6)
 
 
+class Model14(Model12v1):
+    name = 'model_14'
+    model = MultiLevelModel2
+    model_params = dict(
+        global_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=256,
+        crop_num=4,
+    )
+
+
+class Model14v0(Model14):
+    name = 'model_14_v0'
+    model_params = dict(
+        global_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=384,
+        crop_num=2,
+    )
+
+
+class Model14v1(Model14):
+    name = 'model_14_v1'
+    model_params = dict(
+        global_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=256,
+        crop_num=2,
+    )
+
+
+class Model14v2(Model14):
+    name = 'model_14_v2'
+    model_params = dict(
+        global_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=384,
+        crop_num=1,
+    )
+
+
+class Model14pl0(Model14):
+    name = 'model_14_pl0'
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v2_soft_2575.csv')
+
+
 class Res02(Baseline4):
     name = 'res_02'
     dataset_params = dict(
@@ -2458,6 +2508,33 @@ class Res02mod1(Res02lr0):
     criterion = MultiLevelLoss(loss_type='aucpr')
     hook = MultiLevelTrain()
     num_epochs = 30
+
+
+class Res02mod2(Res02lr0):
+    name = 'res_02_mod2'
+    model = MultiLevelModel2
+    model_params = dict(
+        global_model='convnext_nano.in12k_ft_in1k',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=256,
+        crop_num=4,
+        # percent_t=0.1, 
+    )
+    criterion = MultiLevelLoss(loss_type='aucpr')
+    hook = MultiLevelTrain()
+    num_epochs = 30
+
+
+class Res02mod3(Res02mod2):
+    name = 'res_02_mod3'
+    model_params = dict(
+        global_model='convnext_nano.in12k_ft_in1k',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=384,
+        crop_num=2,
+    )
 
 
 class Distillation00(Aug07pl2aug2):

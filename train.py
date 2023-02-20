@@ -291,7 +291,7 @@ if __name__ == "__main__":
             pred_logits = agg_df['prediction'].values.reshape(-1, 1)
             target_fold = agg_df['cancer'].values.reshape(-1, 1)
         
-        if opt.extended_inference:
+        if opt.extended_inference: # Use logits for aggregation
             results = []
             for (_, pid, lat), p, t, s in zip(valid_data.pids, pred_logits.reshape(-1), target_fold.reshape(-1), valid_sites):
                 results.append({'prediction_id': f'{pid}_{lat}', 'pred': p, 'target': t, 'site_id': s})

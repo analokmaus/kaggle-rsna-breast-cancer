@@ -435,7 +435,7 @@ class MultiLevelModel(nn.Module):
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
             nn.Linear(hidden_dim, num_classes))
         
-        self.localizer = nn.Conv2d(global_feature_dim, num_classes, (1, 1), bias=False)
+        self.localizer = nn.Conv2d(global_feature_dim, 1, (1, 1), bias=False)
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.crop_size = crop_size
         self.crop_num = crop_num
@@ -508,7 +508,7 @@ class MultiLevelModel(nn.Module):
             x = self.squeeze_view(x)
         global_features = self.global_encoder(x) # (Nn_views x Ch2 x W2 x H2)
         global_cam = self.localizer(global_features) # (Nn_views x 1 x W2 x H2)
-        x2 = self.retrieve_roi(x, global_cam.sigmoid()) # (Nn_views x n_crop x 1 x Wl x Hl)
+        x2 = self.retrieve_roi(x.detach(), global_cam.sigmoid()) # (Nn_views x n_crop x 1 x Wl x Hl)
         local_features = self.forward_mil(x2)
         global_features = self.global_pool(global_features)
         y_global = self.aggregate_cam(global_cam)
@@ -539,7 +539,8 @@ class MultiLevelModel2(MultiLevelModel):
         roi_centers = {i: [] for i in range(img.shape[0])}
         _, _, ch, cw = cam.shape
         for _ in range(self.crop_num):
-            cam_conv = self.roi_conv(cam2)
+            with torch.no_grad():
+                cam_conv = self.roi_conv(cam2)
             flat_indices = cam_conv.flatten(start_dim=2).argmax(2)
             max_indices = [divmod(idx.item(), cam_conv.shape[-1]) for idx in flat_indices]
             for i, (cy, cx) in enumerate(max_indices):
