@@ -2558,6 +2558,17 @@ class Res02mod4(Res02mod2):
     )
 
 
+class Res02mod5(Res02mod2):
+    name = 'res_02_mod5'
+    model_params = dict(
+        global_model='convnext_nano.in12k_ft_in1k',
+        local_model='convnext_base.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=384,
+        crop_num=2,
+    )
+
+
 class Distillation00(Aug07pl2aug2):
     name = 'distil_00'
     teach_configs = [Aug07, Aug07pl2aug2, AuxLoss03]
