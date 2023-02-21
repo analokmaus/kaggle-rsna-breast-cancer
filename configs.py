@@ -1598,6 +1598,11 @@ class Aug07lr0(Aug07):
     )
 
 
+class Aug07lr0pl0(Aug07lr0):
+    name = 'aug_07_lr0_pl0'
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v3_soft_2575.csv')
+
+
 class Aug07lr1(Aug07lr0):
     name = 'aug_07_lr1'
     criterion = FocalLoss()
@@ -2535,6 +2540,11 @@ class Res02mod3(Res02mod2):
         crop_size=384,
         crop_num=2,
     )
+
+
+class Res02mod3pl0(Res02mod3):
+    name = 'res_02_mod3_pl0'
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v3_soft_2575.csv')
 
 
 class Res02mod4(Res02mod2):
