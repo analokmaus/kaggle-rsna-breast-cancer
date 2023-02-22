@@ -2208,7 +2208,19 @@ class Model14v2(Model14):
 
 class Model14pl0(Model14):
     name = 'model_14_pl0'
-    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v2_soft_2575.csv')
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v3_soft_2575.csv')
+
+
+class Model14pl1(Model14):
+    name = 'model_14_pl1'
+    model_params = dict(
+        global_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=256,
+        crop_num=2,
+    )
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v3_soft_2575.csv')
 
 
 class Res02(Baseline4):
@@ -2569,6 +2581,30 @@ class Res02mod5(Res02mod2):
     )
 
 
+class Res02mod6(Res02mod2):
+    name = 'res_02_mod6'
+    model_params = dict(
+        global_model='convnext_nano.in12k_ft_in1k',
+        local_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=384,
+        crop_num=2,
+    )
+    addon_train_path = Path('input/rsna-breast-cancer-detection/vindr_train_pl_v3_soft_2575.csv')
+
+
+class Res02mod7(Res02mod2):
+    name = 'res_02_mod7'
+    model_params = dict(
+        global_model='tf_efficientnet_b0.ns_jft_in1k',
+        local_model='tf_efficientnet_b2.ns_jft_in1k',
+        pretrained=True,
+        crop_size=384,
+        crop_num=2,
+    )
+    optimizer_params = dict(lr=2e-4, weight_decay=1e-6)
+
+
 class Distillation00(Aug07pl2aug2):
     name = 'distil_00'
     teach_configs = [Aug07, Aug07pl2aug2, AuxLoss03]
@@ -2599,3 +2635,36 @@ class Distillation01(Distillation00):
         classification_model='convnext_tiny.fb_in22k_ft_in1k_384',
         pretrained=True,
         spatial_pool=True)
+    
+
+class Distillation02(Res02mod3):
+    name = 'distil_02'
+    teach_configs = [Res02mod3, Res02mod2]
+    num_epochs = 20
+    hook = Distillation()
+    inference_hook = Res02mod3.hook
+    criterion = nn.MSELoss()
+    eval_metric = PRAUC().torch
+    monitor_metrics = [ContinuousAUC(98.).torch, Pfbeta(binarize=False), Pfbeta(binarize=True)]
+    callbacks = [
+        CollectTopK(2, maximize=True), 
+        SaveAverageSnapshot(num_snapshot=2)
+    ]
+    model_params = dict(
+        global_model='convnext_pico.d1_in1k',
+        local_model='convnext_tiny.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=384,
+        crop_num=2,
+    )
+
+
+class Distillation02mod0(Distillation02):
+    name = 'distil_02_mod0'
+    model_params = dict(
+        global_model='convnext_pico.d1_in1k',
+        local_model='convnext_small.fb_in22k_ft_in1k_384',
+        pretrained=True,
+        crop_size=384,
+        crop_num=2,
+    )

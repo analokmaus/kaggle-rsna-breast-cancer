@@ -574,10 +574,16 @@ class DistillationModel(nn.Module):
         self.teachers.eval()
         with torch.no_grad():
             for m in self.teachers:
-                ys.append(m(x)[:, 0].view(-1, 1))
+                outputs = m(x)
+                if isinstance(outputs, (list, tuple)):
+                    outputs = outputs[0]
+                ys.append(outputs[:, 0].view(-1, 1))
         return torch.stack(ys, dim=0).mean(0)
 
     def forward(self, x):
         y_teacher = self.forward_teacher(x)
         y_student = self.student(x)
+        if isinstance(y_student, (list, tuple)):
+            y_student = y_student[0]
+        y_student = y_student[:, 0].view(-1, 1)
         return y_student, y_teacher
