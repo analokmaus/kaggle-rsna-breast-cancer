@@ -3,7 +3,7 @@
 
 RabotniKuma (Hiroshi Yoshihara) part
 
-## Environmnet
+## Environment
 We recommend you to use [Kaggle GPU docker v128](https://console.cloud.google.com/gcr/images/kaggle-gpu-images/GLOBAL/python).
 
 Conda environment yaml file can be found at `./environment.yaml`.
@@ -25,7 +25,7 @@ Expriment configs are stored in `./configs.py`.
 | Res02mod3   | Multi-view fusion model, 1536x768 | 0.525 | 0.63      | 0.48       |
 
 ### Run experiments
-Make your hardware has at least a total of 64 GB of GPU RAM and run the following: 
+Make your hardware has at least a total of 48 GB of GPU RAM and run the following: 
 ```bash
 python train.py --config {config name} --num_works {number of cpu cores to be used}
 ```
