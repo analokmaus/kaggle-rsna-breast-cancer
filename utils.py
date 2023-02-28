@@ -38,8 +38,9 @@ def print_config(cfg, logger=None):
 
 
 def notify_me(text):
-    line_notify_token = 'BiKjC9KiucCIlvFy1aFZMVPERp5oc18z7wf3japX3hZ'
-    line_notify_api = 'https://notify-api.line.me/api/notify'
-    headers = {'Authorization': f'Bearer {line_notify_token}'}
-    data = {'message': '\n' + text}
-    requests.post(line_notify_api, headers=headers, data=data)
+    # line_notify_token = ''
+    # line_notify_api = 'https://notify-api.line.me/api/notify'
+    # headers = {'Authorization': f'Bearer {line_notify_token}'}
+    # data = {'message': '\n' + text}
+    # requests.post(line_notify_api, headers=headers, data=data)
+    pass
