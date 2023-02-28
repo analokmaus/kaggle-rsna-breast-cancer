@@ -8,7 +8,7 @@ api.authenticate()
 
 COMPETITION =  'rsna-breast-cancer-detection'
 result_ = api.competition_submissions(COMPETITION)[0]
-latest_ref = str(result_)  # 最新のサブミット番号
+latest_ref = str(result_) 
 submit_time = result_.date
 
 status = ''

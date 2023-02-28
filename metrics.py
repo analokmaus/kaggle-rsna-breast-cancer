@@ -1,8 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import segmentation_models_pytorch as smp
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+from sklearn.metrics import precision_recall_curve, auc
 from kuma_utils.metrics import MetricTemplate
 
 
@@ -125,39 +124,6 @@ class PercentilePfbeta(nn.Module):
             approx = approx.float().sigmoid().detach().cpu().numpy()
             target = target.detach().cpu().numpy()
         return self.optimal_f1(target, approx)
-
-
-class IoU(nn.Module):
-
-    def __init__(self, threshold=0.5):
-        super().__init__()
-        self.threshold = threshold
-
-    def forward(self, approx, target):
-        tp, fp, fn, tn = smp.metrics.get_stats(approx.sigmoid(), target.round().long(), mode='multilabel', threshold=0.5)
-        return smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
-    
-
-class ContinuousAUC(MetricTemplate):
-    '''
-    Area under ROC curve
-    '''
-    def __init__(self, threshold_percentile=98.):
-        super().__init__(maximize=True)
-        self.p = threshold_percentile
-
-    def _test(self, target, approx):
-        if len(approx.shape) == 1:
-            approx = approx
-        elif approx.shape[1] == 1:
-            approx = np.squeeze(approx)
-        elif approx.shape[1] == 2:
-            approx = approx[:, 1]
-        else:
-            raise ValueError(f'Invalid approx shape: {approx.shape}')
-        if not np.isin(target, [0., 1.]).all():
-            target = (target >= np.percentile(target, self.p)).astype(float)
-        return roc_auc_score(target, approx)
 
 
 class PRAUC(MetricTemplate):

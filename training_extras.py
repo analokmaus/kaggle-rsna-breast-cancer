@@ -130,36 +130,6 @@ class MultiLevelTrain(SimpleHook):
         return f'MultiLevelTrain()'
 
 
-class MultiLevelTrain2(SimpleHook):
-    '''
-    '''
-
-    def __init__(self, evaluate_in_batch=False):
-        super().__init__(evaluate_in_batch=evaluate_in_batch)
-
-    def evaluate_batch(self, trainer, inputs, approx):
-        pass
-    
-    def forward_train(self, trainer, inputs):
-        input_t, mask_t, target = inputs
-        bs, n_view, ch, h, w = mask_t.shape
-        approx0, approx1, global_cam = trainer.model(input_t)
-        loss = trainer.criterion((approx0, approx1, global_cam), target, mask_t.view(bs*n_view, ch, h, w))
-        storage = trainer.epoch_storage
-        storage['approx'].append(approx0.detach())
-        storage['target'].append(target)
-        return loss, approx0.detach()
-
-    forward_valid = forward_train
-
-    def forward_test(self, trainer, inputs):
-        approx, _, _ = trainer.model(inputs[0])
-        return approx
-
-    def __repr__(self) -> str:
-        return f'MultiLevelTrain()'
-
-
 class SingleImageAggregatedTrain(SimpleHook):
     '''
     '''
@@ -253,35 +223,6 @@ class LRTrain(SimpleHook):
     def __repr__(self) -> str:
         return f'LRTrain()'
     
-
-class Distillation(SimpleHook):
-    '''
-    '''
-
-    def __init__(self, evaluate_in_batch=False):
-        super().__init__(evaluate_in_batch=evaluate_in_batch)
-
-    def evaluate_batch(self, trainer, inputs, approx):
-        pass
-
-    def forward_train(self, trainer, inputs):
-        input_t, target = inputs
-        approx_student, approx_teacher = trainer.model(input_t)
-        loss = trainer.criterion(approx_student, approx_teacher)
-        storage = trainer.epoch_storage
-        storage['approx'].append(approx_student.detach())
-        storage['target'].append(target)
-        return loss, approx_student.detach()
-
-    forward_valid = forward_train
-
-    def forward_test(self, trainer, inputs):
-        approx, _ = trainer.model(inputs[0]) 
-        return approx
-
-    def __repr__(self) -> str:
-        return f'Distillation()'
-
 
 class StepDataset(CallbackTemplate):
 
